@@ -2,7 +2,7 @@ require 'spec_helper'
 
 describe CartService do
   let(:order) { double(:order, id: 123) }
-  let(:currency) { double(:currency) }
+  let(:currency) { "EUR" }
   let(:params) { {} }
   let(:distributor) { double(:distributor) }
   let(:order_cycle) { double(:order_cycle) }
@@ -48,37 +48,6 @@ describe CartService do
         li = order.find_line_item_by_variant(v)
         expect(li).not_to be
       end
-    end
-  end
-
-  describe "populate" do
-    before do
-      expect(cart_service).to receive(:distributor_and_order_cycle).
-        and_return([distributor, order_cycle])
-    end
-
-    it "checks that distribution can supply all products in the cart" do
-      expect(cart_service).to receive(:distribution_can_supply_products_in_cart).
-        with(distributor, order_cycle).and_return(false)
-
-      expect(cart_service.populate(params)).to be false
-      expect(cart_service.errors.to_a).to eq(["That distributor or order cycle can't supply all the products in your cart. Please choose another."])
-    end
-
-    it "locks the order" do
-      allow(cart_service).to receive(:distribution_can_supply_products_in_cart).and_return(true)
-      expect(order).to receive(:with_lock)
-      cart_service.populate(params, true)
-    end
-
-    it "attempts cart add with max_quantity" do
-      allow(cart_service).to receive(:distribution_can_supply_products_in_cart).and_return true
-      params = { variants: { "1" => { quantity: 1, max_quantity: 2 } } }
-      allow(order).to receive(:with_lock).and_yield
-      allow(cart_service).to receive(:varies_from_cart) { true }
-      allow(cart_service).to receive(:variants_removed) { [] }
-      expect(cart_service).to receive(:attempt_cart_add).with("1", 1, 2).and_return true
-      cart_service.populate(params, true)
     end
   end
 
@@ -161,9 +130,10 @@ describe CartService do
     end
 
     it "performs additional validations" do
-      expect(cart_service).to receive(:check_order_cycle_provided_for).with(variant).and_return(true)
+      expect(cart_service).to receive(:check_order_cycle_provided) { true }
       expect(cart_service).to receive(:check_variant_available_under_distribution).with(variant).
         and_return(true)
+      expect(variant).to receive(:on_demand).and_return(false)
       expect(order).to receive(:add_variant).with(variant, quantity, nil, currency)
 
       cart_service.attempt_cart_add(333, quantity.to_s)
@@ -173,7 +143,7 @@ describe CartService do
       expect(cart_service).to receive(:quantities_to_add).with(variant, 123, 123).
         and_return([5, 5])
 
-      allow(cart_service).to receive(:check_order_cycle_provided_for) { true }
+      allow(cart_service).to receive(:check_order_cycle_provided) { true }
       allow(cart_service).to receive(:check_variant_available_under_distribution) { true }
 
       expect(order).to receive(:add_variant).with(variant, 5, 5, currency)
@@ -185,7 +155,7 @@ describe CartService do
       expect(cart_service).to receive(:quantities_to_add).with(variant, 123, 123).
         and_return([0, 0])
 
-      allow(cart_service).to receive(:check_order_cycle_provided_for) { true }
+      allow(cart_service).to receive(:check_order_cycle_provided) { true }
       allow(cart_service).to receive(:check_variant_available_under_distribution) { true }
 
       expect(order).to receive(:remove_variant).with(variant)
@@ -199,6 +169,10 @@ describe CartService do
     let(:v) { double(:variant, on_hand: 10) }
 
     context "when backorders are not allowed" do
+      before do
+        expect(v).to receive(:on_demand).and_return(false)
+      end
+
       context "when max_quantity is not provided" do
         it "returns full amount when available" do
           expect(cart_service.quantities_to_add(v, 5, nil)).to eq([5, nil])
@@ -220,9 +194,9 @@ describe CartService do
       end
     end
 
-    context "when backorders are allowed" do
+    context "when variant is on_demand" do
       before do
-        Spree::Config.allow_backorders = true
+        expect(v).to receive(:on_demand).and_return(true)
       end
 
       it "does not limit quantity" do
@@ -236,77 +210,43 @@ describe CartService do
   end
 
   describe "validations" do
-    describe "determining if distributor can supply products in cart" do
-      it "delegates to DistributionChangeValidator" do
-        dcv = double(:dcv)
-        expect(dcv).to receive(:can_change_to_distribution?).with(distributor, order_cycle).and_return(true)
-        expect(DistributionChangeValidator).to receive(:new).with(order).and_return(dcv)
-        expect(cart_service.send(:distribution_can_supply_products_in_cart, distributor, order_cycle)).to be true
-      end
-    end
-
     describe "checking order cycle is provided for a variant, OR is not needed" do
       let(:variant) { double(:variant) }
 
-      it "returns false and errors when order cycle is not provided and is required" do
-        allow(cart_service).to receive(:order_cycle_required_for).and_return true
-        expect(cart_service.send(:check_order_cycle_provided_for, variant)).to be false
+      it "returns false and errors when order cycle is not provided" do
+        expect(cart_service.send(:check_order_cycle_provided)).to be false
         expect(cart_service.errors.to_a).to eq(["Please choose an order cycle for this order."])
       end
+
       it "returns true when order cycle is provided" do
-        allow(cart_service).to receive(:order_cycle_required_for).and_return true
         cart_service.instance_variable_set :@order_cycle,  double(:order_cycle)
-        expect(cart_service.send(:check_order_cycle_provided_for, variant)).to be true
-      end
-      it "returns true when order cycle is not required" do
-        allow(cart_service).to receive(:order_cycle_required_for).and_return false
-        expect(cart_service.send(:check_order_cycle_provided_for, variant)).to be true
+        expect(cart_service.send(:check_order_cycle_provided)).to be true
       end
     end
 
     describe "checking variant is available under the distributor" do
       let(:product) { double(:product) }
       let(:variant) { double(:variant, product: product) }
+      let(:order_cycle_distributed_variants) { double(:order_cycle_distributed_variants) }
 
-      it "delegates to DistributionChangeValidator, returning true when available" do
-        dcv = double(:dcv)
-        expect(dcv).to receive(:variants_available_for_distribution).with(123, 234).and_return([variant])
-        expect(DistributionChangeValidator).to receive(:new).with(order).and_return(dcv)
+      before do
+        expect(OrderCycleDistributedVariants).to receive(:new).with(234, 123).and_return(order_cycle_distributed_variants)
         cart_service.instance_eval { @distributor = 123; @order_cycle = 234 }
+      end
+
+      it "delegates to OrderCycleDistributedVariants, returning true when available" do
+        expect(order_cycle_distributed_variants).to receive(:available_variants).and_return([variant])
+
         expect(cart_service.send(:check_variant_available_under_distribution, variant)).to be true
         expect(cart_service.errors).to be_empty
       end
 
-      it "delegates to DistributionChangeValidator, returning false and erroring otherwise" do
-        dcv = double(:dcv)
-        expect(dcv).to receive(:variants_available_for_distribution).with(123, 234).and_return([])
-        expect(DistributionChangeValidator).to receive(:new).with(order).and_return(dcv)
-        cart_service.instance_eval { @distributor = 123; @order_cycle = 234 }
+      it "delegates to OrderCycleDistributedVariants, returning false and erroring otherwise" do
+        expect(order_cycle_distributed_variants).to receive(:available_variants).and_return([])
+
         expect(cart_service.send(:check_variant_available_under_distribution, variant)).to be false
         expect(cart_service.errors.to_a).to eq(["That product is not available from the chosen distributor or order cycle."])
       end
-    end
-  end
-
-  describe "support" do
-    describe "checking if order cycle is required for a variant" do
-      it "requires an order cycle when the product has no product distributions" do
-        product = double(:product, product_distributions: [])
-        variant = double(:variant, product: product)
-        expect(cart_service.send(:order_cycle_required_for, variant)).to be true
-      end
-
-      it "does not require an order cycle when the product has product distributions" do
-        product = double(:product, product_distributions: [1])
-        variant = double(:variant, product: product)
-        expect(cart_service.send(:order_cycle_required_for, variant)).to be false
-      end
-    end
-
-    it "provides the distributor and order cycle for the order" do
-      expect(order).to receive(:distributor).and_return(distributor)
-      expect(order).to receive(:order_cycle).and_return(order_cycle)
-      expect(cart_service.send(:distributor_and_order_cycle)).to eq([distributor, order_cycle])
     end
   end
 end

@@ -1,8 +1,9 @@
 class Api::Admin::OrderSerializer < ActiveModel::Serializer
-  attributes :id, :number, :full_name, :email, :phone, :completed_at, :display_total
-  attributes :show_path, :edit_path, :state, :payment_state, :shipment_state
-  attributes :payments_path, :shipments_path, :ship_path, :ready_to_ship, :created_at
-  attributes :distributor_name, :special_instructions, :payment_capture_path
+  attributes :id, :number, :user_id, :full_name, :email, :phone, :completed_at, :display_total,
+             :edit_path, :state, :payment_state, :shipment_state,
+             :payments_path, :ready_to_ship, :ready_to_capture, :created_at,
+             :distributor_name, :special_instructions,
+             :item_total, :adjustment_total, :payment_total, :total
 
   has_one :distributor, serializer: Api::Admin::IdSerializer
   has_one :order_cycle, serializer: Api::Admin::IdSerializer
@@ -15,34 +16,21 @@ class Api::Admin::OrderSerializer < ActiveModel::Serializer
     object.distributor.andand.name
   end
 
-  def show_path
-    return '' unless object.id
-    spree_routes_helper.admin_order_path(object)
-  end
-
   def edit_path
     return '' unless object.id
+
     spree_routes_helper.edit_admin_order_path(object)
   end
 
   def payments_path
     return '' unless object.payment_state
+
     spree_routes_helper.admin_order_payments_path(object)
   end
 
-  def shipments_path
-    return '' unless object.shipment_state
-    spree_routes_helper.admin_order_shipments_path(object)
-  end
-
-  def ship_path
-    spree_routes_helper.fire_admin_order_path(object, e: 'ship')
-  end
-
-  def payment_capture_path
+  def ready_to_capture
     pending_payment = object.pending_payments.first
-    return '' unless object.payment_required? && pending_payment
-    spree_routes_helper.fire_admin_order_payment_path(object, pending_payment.id, e: 'capture')
+    object.payment_required? && pending_payment
   end
 
   def ready_to_ship

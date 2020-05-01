@@ -1,9 +1,9 @@
 module Api
   class OrderSerializer < ActiveModel::Serializer
-    attributes :number, :completed_at, :total, :state, :shipment_state, :payment_state
-    attributes :outstanding_balance, :payments, :path, :cancel_path
-    attributes :changes_allowed, :changes_allowed_until, :item_count
-    attributes :shop_id
+    attributes :number, :completed_at, :total, :state, :shipment_state, :payment_state,
+               :outstanding_balance, :payments, :path, :cancel_path,
+               :changes_allowed, :changes_allowed_until, :item_count,
+               :shop_id
 
     has_many :payments, serializer: Api::PaymentSerializer
 
@@ -25,19 +25,20 @@ module Api
 
     def changes_allowed_until
       return I18n.t(:not_allowed) unless object.changes_allowed?
+
       I18n.l(object.order_cycle.andand.orders_close_at, format: "%b %d, %Y %H:%M")
     end
 
     def shipment_state
-      object.shipment_state ? object.shipment_state : nil
+      object.shipment_state || nil
     end
 
     def payment_state
-      object.payment_state ? object.payment_state : nil
+      object.payment_state || nil
     end
 
     def state
-      object.state ? object.state : nil
+      object.state || nil
     end
 
     def path
@@ -46,6 +47,7 @@ module Api
 
     def cancel_path
       return nil unless object.changes_allowed?
+
       Spree::Core::Engine.routes_url_helpers.cancel_order_path(object)
     end
 

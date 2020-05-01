@@ -6,14 +6,14 @@ describe ShopController, type: :controller, performance: true do
   let(:order_cycle) { create(:simple_order_cycle, distributors: [d], coordinator_fees: [enterprise_fee]) }
 
   before do
-    controller.stub(:current_distributor) { d }
-    controller.stub(:current_order_cycle) { order_cycle }
+    allow(controller).to receive(:current_distributor) { d }
+    allow(controller).to receive(:current_order_cycle) { order_cycle }
     Spree::Config.currency = 'AUD'
   end
 
   describe "fetching products" do
     let(:exchange) { order_cycle.exchanges.to_enterprises(d).outgoing.first }
-    let(:image) { File.open(File.expand_path('../../../app/assets/images/logo-white.png', __FILE__)) }
+    let(:image) { File.open(File.expand_path('../../app/assets/images/logo-white.png', __dir__)) }
     let(:cache_key_patterns) do
       [
         'api\/taxon_serializer\/spree\/taxons',
@@ -36,7 +36,7 @@ describe ShopController, type: :controller, performance: true do
     it "returns products via json" do
       results = multi_benchmark(3, cache_key_patterns: cache_key_patterns) do
         xhr :get, :products
-        response.should be_success
+        expect(response).to be_success
       end
     end
   end

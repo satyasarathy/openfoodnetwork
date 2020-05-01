@@ -26,7 +26,7 @@ describe ProductImport::ProductImporter do
   let!(:variant) { create(:variant, product_id: product.id, price: '8.50', on_hand: '100', unit_value: '500', display_name: 'Preexisting Banana') }
   let!(:product2) { create(:simple_product, supplier: enterprise, on_hand: '100', name: 'Beans', unit_value: '500', primary_taxon_id: category.id, description: nil) }
   let!(:product3) { create(:simple_product, supplier: enterprise, on_hand: '100', name: 'Sprouts', unit_value: '500', primary_taxon_id: category.id) }
-  let!(:product4) { create(:simple_product, supplier: enterprise, on_hand: '100', name: 'Cabbage', unit_value: '500', primary_taxon_id: category.id) }
+  let!(:product4) { create(:simple_product, supplier: enterprise, on_hand: '100', name: 'Cabbage', unit_value: '1', variant_unit_scale: nil, variant_unit: "items", variant_unit_name: "Whole", primary_taxon_id: category.id) }
   let!(:product5) { create(:simple_product, supplier: enterprise2, on_hand: '100', name: 'Lettuce', unit_value: '500', primary_taxon_id: category.id) }
   let!(:product6) { create(:simple_product, supplier: enterprise3, on_hand: '100', name: 'Beetroot', unit_value: '500', on_demand: true, variant_unit_scale: 1, variant_unit: 'weight', primary_taxon_id: category.id, description: nil) }
   let!(:product7) { create(:simple_product, supplier: enterprise3, on_hand: '100', name: 'Tomato', unit_value: '500', variant_unit_scale: 1, variant_unit: 'weight', primary_taxon_id: category.id, description: nil) }
@@ -42,30 +42,30 @@ describe ProductImport::ProductImporter do
 
   let(:permissions) { OpenFoodNetwork::Permissions.new(user) }
 
+  after(:each) do
+    File.delete('/tmp/test-m.csv')
+  end
+
   describe "importing products from a spreadsheet" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "variant_unit_name", "on_demand"]
-        csv << ["Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", "", ""]
-        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "6.50", "2", "kg", "", ""]
-        csv << ["Pea Soup", "User Enterprise", "Vegetables", "8", "5.50", "750", "ml", "", "0"]
-        csv << ["Salad", "User Enterprise", "Vegetables", "7", "4.50", "1", "", "bags", ""]
-        csv << ["Hot Cross Buns", "User Enterprise", "Cake", "7", "3.50", "1", "", "buns", "1"]
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "variant_unit_name", "on_demand", "shipping_category"]
+        csv << ["Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", "", "", shipping_category.name]
+        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "6.50", "2", "kg", "", "", shipping_category.name]
+        csv << ["Pea Soup", "User Enterprise", "Vegetables", "8", "5.50", "750", "ml", "", "0", shipping_category.name]
+        csv << ["Salad", "User Enterprise", "Vegetables", "7", "4.50", "1", "", "bags", "", shipping_category.name]
+        csv << ["Hot Cross Buns", "User Enterprise", "Cake", "7", "3.50", "1", "", "buns", "1", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "returns the number of entries" do
-      expect(@importer.item_count).to eq(5)
+      expect(importer.item_count).to eq(5)
     end
 
     it "validates entries and returns the results as json" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 5
       expect(filter('invalid', entries)).to eq 0
@@ -74,11 +74,11 @@ describe ProductImport::ProductImporter do
     end
 
     it "saves the results and returns info on updated products" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 5
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 5
+      expect(importer.products_created_count).to eq 5
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 5
 
       carrots = Spree::Product.find_by_name('Carrots')
       expect(carrots.supplier).to eq enterprise
@@ -122,7 +122,7 @@ describe ProductImport::ProductImporter do
 
       buns = Spree::Product.find_by_name('Hot Cross Buns')
       expect(buns.supplier).to eq enterprise
-      # buns.on_hand).to eq Infinity
+      expect(buns.on_hand).to eq 7
       expect(buns.price).to eq 3.50
       expect(buns.unit_value).to eq 1
       expect(buns.variant_unit).to eq 'items'
@@ -133,22 +133,18 @@ describe ProductImport::ProductImporter do
   end
 
   describe "when uploading a spreadsheet with some invalid entries" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type"]
-        csv << ["Good Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g"]
-        csv << ["Bad Potatoes", "", "Vegetables", "6", "6.50", "1", ""]
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "shipping_category"]
+        csv << ["Good Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", shipping_category.name]
+        csv << ["Bad Potatoes", "", "Vegetables", "6", "6.50", "1", "", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 1
       expect(filter('invalid', entries)).to eq 1
@@ -157,11 +153,11 @@ describe ProductImport::ProductImporter do
     end
 
     it "allows saving of the valid entries" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 1
+      expect(importer.products_created_count).to eq 1
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 1
 
       carrots = Spree::Product.find_by_name('Good Carrots')
       expect(carrots.supplier).to eq enterprise
@@ -173,23 +169,36 @@ describe ProductImport::ProductImporter do
     end
   end
 
+  describe "when shipping category is missing" do
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "variant_unit_name", "on_demand", "shipping_category"]
+        csv << ["Shipping Test", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", "", nil, nil]
+      end
+    }
+    let(:importer) { import_data csv_data }
+
+    it "raises an error" do
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
+
+      expect(entries['2']['errors']['shipping_category']).to eq "Shipping_category can't be blank"
+    end
+  end
+
   describe "when enterprises are not valid" do
-    before do
-      csv_data = CSV.generate do |csv|
+    let(:csv_data) {
+      CSV.generate do |csv|
         csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type"]
         csv << ["Product 1", "Non-existent Enterprise", "Vegetables", "5", "5.50", "500", "g"]
         csv << ["Product 2", "Non-Producer", "Vegetables", "5", "5.50", "500", "g"]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "adds enterprise errors" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(entries['2']['errors']['producer']).to include "not found in database"
       expect(entries['3']['errors']['producer']).to include "not enabled as a producer"
@@ -197,22 +206,18 @@ describe ProductImport::ProductImporter do
   end
 
   describe "adding new variants to existing products and updating exiting products" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name"]
-        csv << ["Hypothetical Cake", "Another Enterprise", "Cake", "5", "5.50", "500", "g", "Preexisting Banana"]
-        csv << ["Hypothetical Cake", "Another Enterprise", "Cake", "6", "3.50", "500", "g", "Emergent Coffee"]
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name", "shipping_category"]
+        csv << ["Hypothetical Cake", "Another Enterprise", "Cake", "5", "5.50", "500", "g", "Preexisting Banana", shipping_category.name]
+        csv << ["Hypothetical Cake", "Another Enterprise", "Cake", "6", "3.50", "500", "g", "Emergent Coffee", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 2
       expect(filter('invalid', entries)).to eq 0
@@ -221,12 +226,12 @@ describe ProductImport::ProductImporter do
     end
 
     it "saves and updates" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 1
-      expect(@importer.products_updated_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.products_created_count).to eq 1
+      expect(importer.products_updated_count).to eq 1
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 2
 
       added_coffee = Spree::Variant.find_by_display_name('Emergent Coffee')
       expect(added_coffee.product.name).to eq 'Hypothetical Cake'
@@ -242,67 +247,86 @@ describe ProductImport::ProductImporter do
     end
   end
 
-  describe "adding new product and sub-variant at the same time" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name"]
-        csv << ["Potatoes", "User Enterprise", "Vegetables", "5", "3.50", "500", "g", "Small Bag"]
-        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "5.50", "2", "kg", "Big Bag"]
+  describe "updating an exiting variant" do
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "description", "category", "on_hand", "price", "units", "unit_type", "display_name", "shipping_category"]
+        csv << ["Hypothetical Cake", "Another Enterprise", "New Description", "Cake", "5", "5.50", "500", "g", "Preexisting Banana", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
+    }
+    let(:importer) { import_data csv_data }
+
+    it "ignores (non-updatable) description field if it doesn't match the current description" do
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
+
+      expect(filter('valid', entries)).to eq 1
+      expect(filter('invalid', entries)).to eq 0
+      expect(filter('update_product', entries)).to eq 1
     end
-    after { File.delete('/tmp/test-m.csv') }
+  end
+
+  describe "adding new product and sub-variant at the same time" do
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name", "shipping_category"]
+        csv << ["Potatoes", "User Enterprise", "Vegetables", "5", "3.50", "500", "g", "Small Bag", shipping_category.name]
+        csv << ["Chives", "User Enterprise", "Vegetables", "6", "4.50", "500", "g", "Bunch", shipping_category.name]
+        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "5.50", "2", "kg", "Big Bag", shipping_category.name]
+        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "22.00", "10000", "g", "Small Sack", shipping_category.name]
+        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "60.00", "30000", "", "Big Sack", shipping_category.name]
+      end
+    }
+    let(:importer) { import_data csv_data }
 
     it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
-      expect(filter('valid', entries)).to eq 2
-      expect(filter('invalid', entries)).to eq 0
-      expect(filter('create_product', entries)).to eq 2
+      expect(filter('valid', entries)).to eq 3
+      expect(filter('invalid', entries)).to eq 2
+      expect(filter('create_product', entries)).to eq 3
     end
 
     it "saves and updates" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 2
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.products_created_count).to eq 3
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 3
 
       small_bag = Spree::Variant.find_by_display_name('Small Bag')
       expect(small_bag.product.name).to eq 'Potatoes'
       expect(small_bag.price).to eq 3.50
       expect(small_bag.on_hand).to eq 5
 
-      big_bag = Spree::Variant.find_by_display_name('Big Bag')
-      expect(big_bag.product.name).to eq 'Potatoes'
-      expect(big_bag.price).to eq 5.50
-      expect(big_bag.on_hand).to eq 6
+      big_bag = Spree::Variant.find_by_display_name("Big Bag")
+      expect(big_bag).to be_blank
 
-      expect(big_bag.product.id).to eq small_bag.product.id
+      small_sack = Spree::Variant.find_by_display_name("Small Sack")
+      expect(small_sack.product.name).to eq "Potatoes"
+      expect(small_sack.price).to eq 22.00
+      expect(small_sack.on_hand).to eq 6
+      expect(small_sack.product.id).to eq small_bag.product.id
+
+      big_sack = Spree::Variant.find_by_display_name("Big Sack")
+      expect(big_sack).to be_blank
     end
   end
 
   describe "updating various fields" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "on_demand", "sku"]
-        csv << ["Beetroot", "And Another Enterprise", "Vegetables", "5", "3.50", "500", "g", "0", nil]
-        csv << ["Tomato", "And Another Enterprise", "Vegetables", "6", "5.50", "500", "g", "1", "TOMS"]
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "on_demand", "sku", "shipping_category"]
+        csv << ["Beetroot", "And Another Enterprise", "Vegetables", "5", "3.50", "500", "g", "0", nil, shipping_category.name]
+        csv << ["Tomato", "And Another Enterprise", "Vegetables", "6", "5.50", "500", "g", "1", "TOMS", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 2
       expect(filter('invalid', entries)).to eq 0
@@ -311,12 +335,12 @@ describe ProductImport::ProductImporter do
     end
 
     it "saves and updates" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 0
-      expect(@importer.products_updated_count).to eq 2
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.products_created_count).to eq 0
+      expect(importer.products_updated_count).to eq 2
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 2
 
       beetroot = Spree::Product.find_by_name('Beetroot').variants.first
       expect(beetroot.price).to eq 3.50
@@ -329,52 +353,44 @@ describe ProductImport::ProductImporter do
   end
 
   describe "updating non-updatable fields on existing products" do
-    before do
-      csv_data = CSV.generate do |csv|
+    let(:csv_data) {
+      CSV.generate do |csv|
         csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type"]
         csv << ["Beetroot", "And Another Enterprise", "Meat", "5", "3.50", "500", "g"]
         csv << ["Tomato", "And Another Enterprise", "Vegetables", "6", "5.50", "500", "Kg"]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "does not allow updating" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 0
       expect(filter('invalid', entries)).to eq 2
 
-      @importer.all_entries.each do |entry|
+      importer.entries.each do |entry|
         expect(entry.errors.messages.values).to include [I18n.t('admin.product_import.model.not_updatable')]
       end
     end
   end
 
   describe "when more than one product of the same name already exists with multiple variants each" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "description", "on_hand", "price", "units", "unit_type", "display_name"]
-        csv << ["Oats", "User Enterprise", "Cereal", "", "50", "3.50", "500", "g", "Rolled Oats"]   # Update
-        csv << ["Oats", "User Enterprise", "Cereal", "", "80", "3.75", "500", "g", "Flaked Oats"]   # Update
-        csv << ["Oats", "User Enterprise", "Cereal", "", "60", "5.50", "500", "g", "Magic Oats"]    # Add
-        csv << ["Oats", "User Enterprise", "Cereal", "", "70", "8.50", "500", "g", "French Oats"]   # Add
-        csv << ["Oats", "User Enterprise", "Cereal", "", "70", "8.50", "500", "g", "Scottish Oats"] # Add
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "description", "on_hand", "price", "units", "unit_type", "display_name", "shipping_category"]
+        csv << ["Oats", "User Enterprise", "Cereal", "", "50", "3.50", "500", "g", "Rolled Oats", shipping_category.name]   # Update
+        csv << ["Oats", "User Enterprise", "Cereal", "", "80", "3.75", "500", "g", "Flaked Oats", shipping_category.name]   # Update
+        csv << ["Oats", "User Enterprise", "Cereal", "", "60", "5.50", "500", "g", "Magic Oats", shipping_category.name]    # Add
+        csv << ["Oats", "User Enterprise", "Cereal", "", "70", "8.50", "500", "g", "French Oats", shipping_category.name]   # Add
+        csv << ["Oats", "User Enterprise", "Cereal", "", "70", "8.50", "500", "g", "Scottish Oats", shipping_category.name] # Add
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
+    let(:importer) { import_data csv_data }
 
     it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 5
       expect(filter('invalid', entries)).to eq 0
@@ -385,38 +401,34 @@ describe ProductImport::ProductImporter do
     end
 
     it "saves and updates" do
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 3
-      expect(@importer.products_updated_count).to eq 2
-      expect(@importer.inventory_created_count).to eq 0
-      expect(@importer.inventory_updated_count).to eq 0
-      expect(@importer.updated_ids.count).to eq 5
+      expect(importer.products_created_count).to eq 3
+      expect(importer.products_updated_count).to eq 2
+      expect(importer.inventory_created_count).to eq 0
+      expect(importer.inventory_updated_count).to eq 0
+      expect(importer.updated_ids.count).to eq 5
     end
   end
 
   describe "when importer processes create and update across multiple stages" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name"]
-        csv << ["Bag of Oats", "User Enterprise", "Cereal", "60", "5.50", "500", "g", "Magic Oats"]     # Add
-        csv << ["Bag of Oats", "User Enterprise", "Cereal", "70", "8.50", "500", "g", "French Oats"]    # Add
-        csv << ["Bag of Oats", "User Enterprise", "Cereal", "80", "9.50", "500", "g", "Organic Oats"]   # Add
-        csv << ["Bag of Oats", "User Enterprise", "Cereal", "90", "7.50", "500", "g", "Scottish Oats"]  # Add
-        csv << ["Bag of Oats", "User Enterprise", "Cereal", "30", "6.50", "500", "g", "Breakfast Oats"] # Add
+    let(:csv_data) {
+      CSV.generate do |csv|
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "display_name", "shipping_category"]
+        csv << ["Bag of Oats", "User Enterprise", "Cereal", "60", "5.50", "500", "g", "Magic Oats", shipping_category.name]     # Add
+        csv << ["Bag of Oats", "User Enterprise", "Cereal", "70", "8.50", "500", "g", "French Oats", shipping_category.name]    # Add
+        csv << ["Bag of Oats", "User Enterprise", "Cereal", "80", "9.50", "500", "g", "Organic Oats", shipping_category.name]   # Add
+        csv << ["Bag of Oats", "User Enterprise", "Cereal", "90", "7.50", "500", "g", "Scottish Oats", shipping_category.name]  # Add
+        csv << ["Bag of Oats", "User Enterprise", "Cereal", "30", "6.50", "500", "g", "Breakfast Oats", shipping_category.name] # Add
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      @file = File.new('/tmp/test-m.csv')
-      @settings = {'import_into' => 'product_list'}
-    end
-    after { File.delete('/tmp/test-m.csv') }
+    }
 
     it "processes the validation in stages" do
-      # Using settings of start: 1, end: 2 to simulate import over multiple stages
-      @importer = ProductImport::ProductImporter.new(@file, admin, start: 1, end: 3, settings: @settings)
+      # Using settings of start: 1, end: 3 to simulate import over multiple stages
+      importer = import_data csv_data, start: 1, end: 3
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 3
       expect(filter('invalid', entries)).to eq 0
@@ -425,10 +437,10 @@ describe ProductImport::ProductImporter do
       expect(filter('create_inventory', entries)).to eq 0
       expect(filter('update_inventory', entries)).to eq 0
 
-      @importer = ProductImport::ProductImporter.new(@file, admin, start: 4, end: 6, settings: @settings)
+      importer = import_data csv_data, start: 4, end: 6
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 2
       expect(filter('invalid', entries)).to eq 0
@@ -439,23 +451,23 @@ describe ProductImport::ProductImporter do
     end
 
     it "processes saving in stages" do
-      @importer = ProductImport::ProductImporter.new(@file, admin, start: 1, end: 3, settings: @settings)
-      @importer.save_entries
+      importer = import_data csv_data, start: 1, end: 3
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 3
-      expect(@importer.products_updated_count).to eq 0
-      expect(@importer.inventory_created_count).to eq 0
-      expect(@importer.inventory_updated_count).to eq 0
-      expect(@importer.updated_ids.count).to eq 3
+      expect(importer.products_created_count).to eq 3
+      expect(importer.products_updated_count).to eq 0
+      expect(importer.inventory_created_count).to eq 0
+      expect(importer.inventory_updated_count).to eq 0
+      expect(importer.updated_ids.count).to eq 3
 
-      @importer = ProductImport::ProductImporter.new(@file, admin, start: 4, end: 6, settings: @settings)
-      @importer.save_entries
+      importer = import_data csv_data, start: 4, end: 6
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 2
-      expect(@importer.products_updated_count).to eq 0
-      expect(@importer.inventory_created_count).to eq 0
-      expect(@importer.inventory_updated_count).to eq 0
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.products_created_count).to eq 2
+      expect(importer.products_updated_count).to eq 0
+      expect(importer.inventory_created_count).to eq 0
+      expect(importer.inventory_updated_count).to eq 0
+      expect(importer.updated_ids.count).to eq 2
 
       products = Spree::Product.find_all_by_name('Bag of Oats')
 
@@ -465,79 +477,117 @@ describe ProductImport::ProductImporter do
   end
 
   describe "importing items into inventory" do
-    before do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "distributor", "producer", "on_hand", "price", "units", "unit_type"]
-        csv << ["Beans", "Another Enterprise", "User Enterprise", "5", "3.20", "500", "g"]
-        csv << ["Sprouts", "Another Enterprise", "User Enterprise", "6", "6.50", "500", "g"]
-        csv << ["Cabbage", "Another Enterprise", "User Enterprise", "2001", "1.50", "500", "g"]
+    describe "creating and updating inventory" do
+      let(:csv_data) {
+        CSV.generate do |csv|
+          csv << ["name", "distributor", "producer", "on_hand", "price", "units", "unit_type", "variant_unit_name"]
+          csv << ["Beans", "Another Enterprise", "User Enterprise", "5", "3.20", "500", "g", ""]
+          csv << ["Sprouts", "Another Enterprise", "User Enterprise", "6", "6.50", "500", "g", ""]
+          csv << ["Cabbage", "Another Enterprise", "User Enterprise", "2001", "1.50", "1", "", "Whole"]
+        end
+      }
+      let(:importer) { import_data csv_data, import_into: 'inventories' }
+
+      it "validates entries" do
+        importer.validate_entries
+        entries = JSON.parse(importer.entries_json)
+
+        expect(filter('valid', entries)).to eq 3
+        expect(filter('invalid', entries)).to eq 0
+        expect(filter('create_inventory', entries)).to eq 2
+        expect(filter('update_inventory', entries)).to eq 1
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'inventories'}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
+
+      it "saves and updates inventory" do
+        importer.save_entries
+
+        expect(importer.inventory_created_count).to eq 2
+        expect(importer.inventory_updated_count).to eq 1
+        expect(importer.updated_ids).to be_a(Array)
+        expect(importer.updated_ids.count).to eq 3
+
+        beans_override = VariantOverride.where(variant_id: product2.variants.first.id, hub_id: enterprise2.id).first
+        sprouts_override = VariantOverride.where(variant_id: product3.variants.first.id, hub_id: enterprise2.id).first
+        cabbage_override = VariantOverride.where(variant_id: product4.variants.first.id, hub_id: enterprise2.id).first
+
+        expect(Float(beans_override.price)).to eq 3.20
+        expect(beans_override.count_on_hand).to eq 5
+
+        expect(Float(sprouts_override.price)).to eq 6.50
+        expect(sprouts_override.count_on_hand).to eq 6
+
+        expect(Float(cabbage_override.price)).to eq 1.50
+        expect(cabbage_override.count_on_hand).to eq 2001
+      end
     end
-    after { File.delete('/tmp/test-m.csv') }
 
-    it "validates entries" do
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+    describe "updating existing inventory referenced by display_name" do
+      let(:csv_data) {
+        CSV.generate do |csv|
+          csv << ["name", "display_name", "distributor", "producer", "on_hand", "price", "units"]
+          csv << ["Oats", "Porridge Oats", "Another Enterprise", "User Enterprise", "900", "", "500"]
+        end
+      }
+      let(:importer) { import_data csv_data, import_into: 'inventories' }
 
-      expect(filter('valid', entries)).to eq 3
-      expect(filter('invalid', entries)).to eq 0
-      expect(filter('create_inventory', entries)).to eq 2
-      expect(filter('update_inventory', entries)).to eq 1
+      it "updates inventory item correctly" do
+        importer.save_entries
+
+        expect(importer.inventory_created_count).to eq 1
+
+        override = VariantOverride.where(variant_id: variant2.id, hub_id: enterprise2.id).first
+        visible = InventoryItem.where(variant_id: variant2.id, enterprise_id: enterprise2.id).first.visible
+
+        expect(override.count_on_hand).to eq 900
+        expect(visible).to be_truthy
+      end
     end
 
-    it "saves and updates inventory" do
-      @importer.save_entries
+    describe "updating existing item that was set to hidden in inventory" do
+      let!(:inventory) { InventoryItem.create(variant_id: product4.variants.first.id, enterprise_id: enterprise2.id, visible: false) }
+      let(:csv_data) {
+        CSV.generate do |csv|
+          csv << ["name", "distributor", "producer", "on_hand", "price", "units", "variant_unit_name"]
+          csv << ["Cabbage", "Another Enterprise", "User Enterprise", "900", "", "1", "Whole"]
+        end
+      }
+      let(:importer) { import_data csv_data, import_into: 'inventories' }
 
-      expect(@importer.inventory_created_count).to eq 2
-      expect(@importer.inventory_updated_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 3
+      it "sets the item to visible in inventory when the item is updated" do
+        importer.save_entries
 
-      beans_override = VariantOverride.where(variant_id: product2.variants.first.id, hub_id: enterprise2.id).first
-      sprouts_override = VariantOverride.where(variant_id: product3.variants.first.id, hub_id: enterprise2.id).first
-      cabbage_override = VariantOverride.where(variant_id: product4.variants.first.id, hub_id: enterprise2.id).first
+        expect(importer.inventory_updated_count).to eq 1
 
-      expect(Float(beans_override.price)).to eq 3.20
-      expect(beans_override.count_on_hand).to eq 5
+        override = VariantOverride.where(variant_id: product4.variants.first.id, hub_id: enterprise2.id).first
+        visible = InventoryItem.where(variant_id: product4.variants.first.id, enterprise_id: enterprise2.id).first.visible
 
-      expect(Float(sprouts_override.price)).to eq 6.50
-      expect(sprouts_override.count_on_hand).to eq 6
-
-      expect(Float(cabbage_override.price)).to eq 1.50
-      expect(cabbage_override.count_on_hand).to eq 2001
+        expect(override.count_on_hand).to eq 900
+        expect(visible).to be_truthy
+      end
     end
   end
 
   describe "handling enterprise permissions" do
-    after { File.delete('/tmp/test-m.csv') }
-
     it "only allows product import into enterprises the user is permitted to manage" do
       csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type"]
-        csv << ["My Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g"]
-        csv << ["Your Potatoes", "Another Enterprise", "Vegetables", "6", "6.50", "1", "kg"]
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "shipping_category"]
+        csv << ["My Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", shipping_category.name]
+        csv << ["Your Potatoes", "Another Enterprise", "Vegetables", "6", "6.50", "1", "kg", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list'}
-      @importer = ProductImport::ProductImporter.new(file, user, start: 1, end: 100, settings: settings)
+      importer = import_data csv_data, import_user: user
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 1
       expect(filter('invalid', entries)).to eq 1
       expect(filter('create_product', entries)).to eq 1
 
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 1
+      expect(importer.products_created_count).to eq 1
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 1
 
       expect(Spree::Product.find_by_name('My Carrots')).to be_a Spree::Product
       expect(Spree::Product.find_by_name('Your Potatoes')).to eq nil
@@ -548,23 +598,20 @@ describe ProductImport::ProductImporter do
         csv << ["name", "producer", "distributor", "on_hand", "price", "units", "unit_type"]
         csv << ["Beans", "User Enterprise", "Another Enterprise", "777", "3.20", "500", "g"]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'inventories'}
-      @importer = ProductImport::ProductImporter.new(file, user2, start: 1, end: 100, settings: settings)
+      importer = import_data csv_data, import_into: 'inventories'
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 1
       expect(filter('invalid', entries)).to eq 0
       expect(filter('create_inventory', entries)).to eq 1
 
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.inventory_created_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 1
+      expect(importer.inventory_created_count).to eq 1
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 1
 
       beans = VariantOverride.where(variant_id: product2.variants.first.id, hub_id: enterprise2.id).first
       expect(beans.count_on_hand).to eq 777
@@ -576,60 +623,53 @@ describe ProductImport::ProductImporter do
         csv << ["Beans", "User Enterprise", "5", "3.20", "500", "g"]
         csv << ["Sprouts", "User Enterprise", "6", "6.50", "500", "g"]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'inventories'}
-      @importer = ProductImport::ProductImporter.new(file, user2, start: 1, end: 100, settings: settings)
+      importer = import_data csv_data, import_into: 'inventories'
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 0
       expect(filter('invalid', entries)).to eq 2
       expect(filter('create_inventory', entries)).to eq 0
 
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.inventory_created_count).to eq 0
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 0
+      expect(importer.inventory_created_count).to eq 0
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 0
     end
   end
 
   describe "applying settings and defaults on import" do
-    after { File.delete('/tmp/test-m.csv') }
-
     it "can reset all products for an enterprise that are not present in the uploaded file to zero stock" do
       csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type"]
-        csv << ["Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g"]
-        csv << ["Beans", "User Enterprise", "Vegetables", "6", "6.50", "500", "g"]
+        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "shipping_category"]
+        csv << ["Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", shipping_category.name]
+        csv << ["Beans", "User Enterprise", "Vegetables", "6", "6.50", "500", "g", shipping_category.name]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'product_list', 'reset_all_absent' => true}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
+      importer = import_data csv_data, reset_all_absent: true
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 2
       expect(filter('invalid', entries)).to eq 0
       expect(filter('create_product', entries)).to eq 1
       expect(filter('update_product', entries)).to eq 1
 
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.products_created_count).to eq 1
-      expect(@importer.products_updated_count).to eq 1
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.products_created_count).to eq 1
+      expect(importer.products_updated_count).to eq 1
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 2
 
-      updated_ids = @importer.updated_ids
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, updated_ids: updated_ids, enterprises_to_reset: [enterprise.id], settings: settings)
-      @importer.reset_absent(updated_ids)
+      updated_ids = importer.updated_ids
 
-      expect(@importer.products_reset_count).to eq 7
+      importer = import_data csv_data, reset_all_absent: true, updated_ids: updated_ids, enterprises_to_reset: [enterprise.id]
+      importer.reset_absent(updated_ids)
+
+      expect(importer.products_reset_count).to eq 7
 
       expect(Spree::Product.find_by_name('Carrots').on_hand).to eq 5    # Present in file, added
       expect(Spree::Product.find_by_name('Beans').on_hand).to eq 6      # Present in file, updated
@@ -644,29 +684,25 @@ describe ProductImport::ProductImporter do
         csv << ["Beans", "Another Enterprise", "User Enterprise", "6", "3.20", "500", "g"]
         csv << ["Sprouts", "Another Enterprise", "User Enterprise", "7", "6.50", "500", "g"]
       end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-      settings = {'import_into' => 'inventories', 'reset_all_absent' => true}
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
+      importer = import_data csv_data, import_into: 'inventories', reset_all_absent: true
 
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
+      importer.validate_entries
+      entries = JSON.parse(importer.entries_json)
 
       expect(filter('valid', entries)).to eq 2
       expect(filter('invalid', entries)).to eq 0
       expect(filter('create_inventory', entries)).to eq 2
 
-      @importer.save_entries
+      importer.save_entries
 
-      expect(@importer.inventory_created_count).to eq 2
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
+      expect(importer.inventory_created_count).to eq 2
+      expect(importer.updated_ids).to be_a(Array)
+      expect(importer.updated_ids.count).to eq 2
 
-      updated_ids = @importer.updated_ids
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, updated_ids: updated_ids, enterprises_to_reset: [enterprise2.id], settings: settings)
-      @importer.reset_absent(updated_ids)
+      updated_ids = importer.updated_ids
 
-      # expect(@importer.products_reset_count).to eq 1
+      importer = import_data csv_data, import_into: 'inventories', reset_all_absent: true, updated_ids: updated_ids, enterprises_to_reset: [enterprise2.id]
+      importer.reset_absent(updated_ids)
 
       beans = VariantOverride.where(variant_id: product2.variants.first.id, hub_id: enterprise2.id).first
       sprouts = VariantOverride.where(variant_id: product3.variants.first.id, hub_id: enterprise2.id).first
@@ -678,73 +714,31 @@ describe ProductImport::ProductImporter do
       expect(cabbage.count_on_hand).to eq 0    # In enterprise, not in file (reset)
       expect(lettuce.count_on_hand).to eq 96   # In different enterprise; unchanged
     end
-
-    it "can overwrite fields with selected defaults when importing to product list" do
-      csv_data = CSV.generate do |csv|
-        csv << ["name", "producer", "category", "on_hand", "price", "units", "unit_type", "tax_category_id", "available_on"]
-        csv << ["Carrots", "User Enterprise", "Vegetables", "5", "3.20", "500", "g", tax_category.id, ""]
-        csv << ["Potatoes", "User Enterprise", "Vegetables", "6", "6.50", "1", "kg", "", ""]
-      end
-      File.write('/tmp/test-m.csv', csv_data)
-      file = File.new('/tmp/test-m.csv')
-
-      settings = {enterprise.id.to_s => {
-        'import_into' => 'product_list',
-        'defaults' => {
-          'on_hand' => {
-            'active' => true,
-            'mode' => 'overwrite_all',
-            'value' => '9000'
-          },
-          'tax_category_id' => {
-            'active' => true,
-            'mode' => 'overwrite_empty',
-            'value' => tax_category2.id
-          },
-          'shipping_category_id' => {
-            'active' => true,
-            'mode' => 'overwrite_all',
-            'value' => shipping_category.id
-          },
-          'available_on' => {
-            'active' => true,
-            'mode' => 'overwrite_all',
-            'value' => '2020-01-01'
-          }
-        }
-      }}
-
-      @importer = ProductImport::ProductImporter.new(file, admin, start: 1, end: 100, settings: settings)
-
-      @importer.validate_entries
-      entries = JSON.parse(@importer.entries_json)
-
-      expect(filter('valid', entries)).to eq 2
-      expect(filter('invalid', entries)).to eq 0
-      expect(filter('create_product', entries)).to eq 2
-
-      @importer.save_entries
-
-      expect(@importer.products_created_count).to eq 2
-      expect(@importer.updated_ids).to be_a(Array)
-      expect(@importer.updated_ids.count).to eq 2
-
-      carrots = Spree::Product.find_by_name('Carrots')
-      expect(carrots.on_hand).to eq 9000
-      expect(carrots.tax_category_id).to eq tax_category.id
-      expect(carrots.shipping_category_id).to eq shipping_category.id
-      expect(carrots.available_on).to be_within(1.day).of(Time.zone.local(2020, 1, 1))
-
-      potatoes = Spree::Product.find_by_name('Potatoes')
-      expect(potatoes.on_hand).to eq 9000
-      expect(potatoes.tax_category_id).to eq tax_category2.id
-      expect(potatoes.shipping_category_id).to eq shipping_category.id
-      expect(potatoes.available_on).to be_within(1.day).of(Time.zone.local(2020, 1, 1))
-    end
   end
 end
 
 private
+
+def import_data(csv_data, args = {})
+  import_user = args[:import_user] || admin
+  import_into = args[:import_into] || 'product_list'
+  start_row = args[:start] || 1
+  end_row = args[:end] || 100
+  reset_all_absent = args[:reset_all_absent] || false
+  updated_ids = args[:updated_ids] || nil
+  enterprises_to_reset = args[:enterprises_to_reset] || nil
+  settings = args[:settings] || { 'import_into' => import_into, 'reset_all_absent' => reset_all_absent }
+
+  File.write('/tmp/test-m.csv', csv_data)
+  @file ||= File.new('/tmp/test-m.csv')
+  ProductImport::ProductImporter.new(@file,
+                                     import_user,
+                                     start: start_row,
+                                     end: end_row,
+                                     updated_ids: updated_ids,
+                                     enterprises_to_reset: enterprises_to_reset,
+                                     settings: settings)
+end
 
 def filter(type, entries)
   valid_count = 0

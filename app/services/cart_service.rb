@@ -13,12 +13,6 @@ class CartService
 
   def populate(from_hash, overwrite = false)
     @distributor, @order_cycle = distributor_and_order_cycle
-    # Refactor: We may not need this validation - we can't change distribution here, so
-    # this validation probably can't fail
-    if !distribution_can_supply_products_in_cart(@distributor, @order_cycle)
-      errors.add(:base, I18n.t(:spree_order_populator_error))
-      return false
-    end
 
     @order.with_lock do
       variants = read_variants from_hash
@@ -59,7 +53,7 @@ class CartService
   def quantities_to_add(variant, quantity, max_quantity)
     # If not enough stock is available, add as much as we can to the cart
     on_hand = variant.on_hand
-    on_hand = [quantity, max_quantity].compact.max if Spree::Config.allow_backorders
+    on_hand = [quantity, max_quantity].compact.max if variant.on_demand
     quantity_to_add = [quantity, on_hand].min
     max_quantity_to_add = max_quantity # max_quantity is not capped
 
@@ -116,10 +110,6 @@ class CartService
     [@order.distributor, @order.order_cycle]
   end
 
-  def distribution_can_supply_products_in_cart(distributor, order_cycle)
-    DistributionChangeValidator.new(@order).can_change_to_distribution?(distributor, order_cycle)
-  end
-
   def varies_from_cart(variant_data)
     li = line_item_for_variant_id variant_data[:variant_id]
 
@@ -137,24 +127,20 @@ class CartService
   end
 
   def valid_variant?(variant)
-    check_order_cycle_provided_for(variant) && check_variant_available_under_distribution(variant)
+    check_order_cycle_provided && check_variant_available_under_distribution(variant)
   end
 
-  def check_order_cycle_provided_for(variant)
-    order_cycle_provided = (!order_cycle_required_for(variant) || @order_cycle.present?)
+  def check_order_cycle_provided
+    order_cycle_provided = @order_cycle.present?
     errors.add(:base, "Please choose an order cycle for this order.") unless order_cycle_provided
     order_cycle_provided
   end
 
   def check_variant_available_under_distribution(variant)
-    return true if DistributionChangeValidator.new(@order).variants_available_for_distribution(@distributor, @order_cycle).include? variant
+    return true if OrderCycleDistributedVariants.new(@order_cycle, @distributor).available_variants.include? variant
 
     errors.add(:base, I18n.t(:spree_order_populator_availability_error))
     false
-  end
-
-  def order_cycle_required_for(variant)
-    variant.product.product_distributions.empty?
   end
 
   def line_item_for_variant_id(variant_id)

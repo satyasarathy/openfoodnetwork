@@ -19,8 +19,7 @@
         {{ orderCycle.producers.length }}
         = t('.suppliers')
       %span{ ng: { hide: 'orderCycle.producers.length > 3', bind: 'orderCycle.producerNames' } }
-    %td.coordinator{ ng: { show: 'columns.coordinator.visible' } }
-      {{ orderCycle.coordinator.name }}
+    %td.coordinator{ ng: { show: 'columns.coordinator.visible', bind: { html: 'orderCycle.coordinator.name'} } }
     %td.shops{ ng: { show: 'columns.shops.visible' } }
       %span{'ofn-with-tip' => '{{ orderCycle.shopNames }}', ng: { show: 'orderCycle.shops.length > 3' } }
         {{ orderCycle.shops.length }}
@@ -33,8 +32,8 @@
       = t('.variants')
 
   %td.actions
-    %a.edit-order-cycle.icon-edit.no-text{ ng: { href: '{{orderCycle.edit_path}}'} }
+    %a.edit-order-cycle.icon-edit.no-text{ ng: { href: '{{orderCycle.edit_path}}'}, 'ofn-with-tip' => t(:edit) }
   %td.actions{ ng: { if: 'orderCycle.viewing_as_coordinator' } }
-    %a.clone-order-cycle.icon-copy.no-text{ ng: { href: '{{orderCycle.clone_path}}'} }
-  %td.actions{ ng: { if: 'orderCycle.deletable && orderCycle.viewing_as_coordinator' } }
-    %a.delete-order-cycle.icon-trash.no-text{ ng: { href: '{{orderCycle.delete_path}}'}, data: { method: 'delete', confirm: t(:are_you_sure) } }
+    %a.clone-order-cycle.icon-copy.no-text{ ng: { href: '{{orderCycle.clone_path}}'}, 'ofn-with-tip' => t(:clone) }
+  %td.actions{ ng: { if: 'orderCycle.deletable && orderCycle.viewing_as_coordinator' }}
+    %a.delete-order-cycle.icon-trash.no-text{ ng: { href: '{{orderCycle.delete_path}}'}, data: { method: 'delete', confirm: t(:are_you_sure) }, 'ofn-with-tip' => t(:remove) }

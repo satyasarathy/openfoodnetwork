@@ -1,4 +1,4 @@
-namespace :openfoodnetwork do
+namespace :ofn do
   namespace :specs do
     namespace :engines do
       def detect_engine_paths
@@ -10,7 +10,7 @@ namespace :openfoodnetwork do
       end
 
       def execute_rspec_for_engine(engine_path)
-        system "cd #{engine_path.expand_path} && DISABLE_KNAPSACK=true bundle exec rspec"
+        system "DISABLE_KNAPSACK=true bundle exec rspec #{engine_path.expand_path}/spec"
       end
 
       engine_paths = detect_engine_paths

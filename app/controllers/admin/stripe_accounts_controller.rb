@@ -22,13 +22,15 @@ module Admin
       redirect_to main_app.edit_admin_enterprise_path(stripe_account.enterprise)
     rescue ActiveRecord::RecordNotFound
       flash[:error] = "Failed to disconnect Stripe."
-      redirect_to spree.admin_path
+      redirect_to spree.admin_dashboard_path
     end
 
     def status
       return render json: { status: :stripe_disabled } unless Spree::Config.stripe_connect_enabled
+
       stripe_account = StripeAccount.find_by_enterprise_id(params[:enterprise_id])
       return render json: { status: :account_missing } unless stripe_account
+
       authorize! :status, stripe_account
 
       begin

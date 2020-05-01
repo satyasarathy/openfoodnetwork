@@ -1,12 +1,14 @@
+require 'spree/concerns/payment_method_distributors'
+
 Spree::PaymentMethod.class_eval do
   include Spree::Core::CalculatedAdjustments
+  include Spree::PaymentMethodDistributors
 
   acts_as_taggable
 
-  has_and_belongs_to_many :distributors, join_table: 'distributors_payment_methods', :class_name => 'Enterprise', association_foreign_key: 'distributor_id'
   has_many :credit_cards, class_name: "Spree::CreditCard" # from Spree v.2.3.0 d470b31798f37
 
-  attr_accessible :distributor_ids, :tag_list
+  attr_accessible :tag_list
 
   after_initialize :init
 
@@ -18,9 +20,14 @@ Spree::PaymentMethod.class_eval do
       scoped
     else
       joins(:distributors).
-        where('distributors_payment_methods.distributor_id IN (?)', user.enterprises).
+        where('distributors_payment_methods.distributor_id IN (?)', user.enterprises.select(&:id)).
         select('DISTINCT spree_payment_methods.*')
     end
+  }
+
+  scope :for_distributors, ->(distributors) {
+    non_unique_matches = unscoped.joins(:distributors).where(enterprises: { id: distributors })
+    where(id: non_unique_matches.map(&:id))
   }
 
   scope :for_distributor, lambda { |distributor|
@@ -28,19 +35,19 @@ Spree::PaymentMethod.class_eval do
       where('enterprises.id = ?', distributor)
   }
 
-  scope :for_subscriptions, where(type: Subscription::ALLOWED_PAYMENT_METHOD_TYPES)
+  scope :for_subscriptions, -> { where(type: Subscription::ALLOWED_PAYMENT_METHOD_TYPES) }
 
-  scope :by_name, order('spree_payment_methods.name ASC')
+  scope :by_name, -> { order('spree_payment_methods.name ASC') }
 
   # Rewrite Spree's ruby-land class method as a scope
-  scope :available, lambda { |display_on='both'|
+  scope :available, lambda { |display_on = 'both'|
     where(active: true).
       where('spree_payment_methods.display_on=? OR spree_payment_methods.display_on=? OR spree_payment_methods.display_on IS NULL', display_on, '').
       where('spree_payment_methods.environment=? OR spree_payment_methods.environment=? OR spree_payment_methods.environment IS NULL', Rails.env, '')
   }
 
   def init
-    unless reflections.keys.include? :calculator
+    unless reflections.key?(:calculator)
       self.class.include Spree::Core::CalculatedAdjustments
     end
 
@@ -48,7 +55,7 @@ Spree::PaymentMethod.class_eval do
   end
 
   def has_distributor?(distributor)
-    self.distributors.include?(distributor)
+    distributors.include?(distributor)
   end
 
   def self.clean_name
@@ -61,6 +68,8 @@ Spree::PaymentMethod.class_eval do
       "Pin Payments"
     when "Spree::Gateway::StripeConnect"
       "Stripe"
+    when "Spree::Gateway::StripeSCA"
+      "Stripe SCA"
     when "Spree::Gateway::PayPalExpress"
       "PayPal Express"
     else

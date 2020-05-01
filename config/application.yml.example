@@ -28,7 +28,7 @@ CURRENCY: AUD
 # Mail settings
 MAIL_HOST: 'example.com'
 MAIL_DOMAIN: 'example.com'
-MAIL_PORT: 25
+MAIL_PORT: '25'
 SMTP_USERNAME: 'ofn'
 SMTP_PASSWORD: 'f00d'
 
@@ -36,6 +36,9 @@ SMTP_PASSWORD: 'f00d'
 # MAIL_SECURE_CONNECTION: 'TLS' # 'None' (default), 'SSL' or 'TLS'
 # MAILS_FROM: hello@example.com
 # MAIL_BCC: manager@example.com
+
+# Javascript error reporting via Bugsnag.
+#BUGSNAG_JS_KEY: ""
 
 # SingleSignOn login for Discourse
 #
@@ -48,12 +51,6 @@ SMTP_PASSWORD: 'f00d'
 # see: https://developers.google.com/maps/documentation/javascript/get-api-key
 # GOOGLE_MAPS_API_KEY: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# optional, see: https://www.skylight.io/oss
-# SKYLIGHT_AUTHENTICATION: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Should be set if using Skylight, adds a link to Skylight dashboard to our footer
-# SKYLIGHT_PUBLIC_DASHBOARD_URL: "https://oss.skylight.io/app/applications/xxxxxxxxxx"
-
 # Stripe Connect details for instance account
 # Find these under 'API keys' and 'Connect' in your Stripe account dashboard -> Account Settings
 # Under 'Connect', the Redirect URI should be set to https://YOUR_SERVER_URL/stripe/callbacks (e.g. https://openfoodnetwork.org.uk/stripe/callbacks)
@@ -62,3 +59,5 @@ SMTP_PASSWORD: 'f00d'
 # STRIPE_INSTANCE_PUBLISHABLE_KEY: "pk_test_xxxx" # This can be a test key or a live key
 # STRIPE_CLIENT_ID: "ca_xxxx" # This can be a development ID or a production ID
 # STRIPE_ENDPOINT_SECRET: "whsec_xxxx"
+
+MEMCACHED_VALUE_MAX_MEGABYTES: '4'

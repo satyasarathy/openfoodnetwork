@@ -89,6 +89,9 @@ describe Spree::OrdersController, type: :controller do
       allow(controller).to receive(:current_order).and_return order
       allow(order).to receive_message_chain(:line_items, :empty?).and_return true
       allow(order).to receive(:insufficient_stock_lines).and_return []
+      allow(order).to receive(:line_item_variants).and_return []
+      allow(order_cycle).to receive(:variants_distributed_by).and_return []
+
       session[:access_token] = order.token
       spree_get :edit
       expect(response).to redirect_to shop_path
@@ -116,7 +119,7 @@ describe Spree::OrdersController, type: :controller do
       expect(flash[:info]).to eq("The hub you have selected is temporarily closed for orders. Please try again later.")
     end
 
-    describe "when an item has insufficient stock" do
+    describe "when an item is in the cart" do
       let(:order) { subject.current_order(true) }
       let(:oc) { create(:simple_order_cycle, distributors: [d], variants: [variant]) }
       let(:d) { create(:distributor_enterprise, shipping_methods: [create(:shipping_method)], payment_methods: [create(:payment_method)]) }
@@ -126,13 +129,52 @@ describe Spree::OrdersController, type: :controller do
       before do
         order.set_distribution! d, oc
         order.add_variant variant, 5
-        variant.update_attributes! on_hand: 3
       end
 
-      it "displays a flash message when we view the cart" do
-        spree_get :edit
-        expect(response.status).to eq 200
-        expect(flash[:error]).to eq("An item in your cart has become unavailable.")
+      describe "the page" do
+        render_views
+
+        pending "provides the right registration path" do
+          # We have an issue with the registration link within Spree controllers.
+          # The `registration_path` helper resolves to `/signup` due to
+          # spree_auth_device > config > routes.rb, but it should be `/register`.
+          #
+          # When this is true, we can use registration_path in views again.
+          expect(subject.registration_path).to eq registration_path
+        end
+
+        it "shows the right registration link" do
+          # We fixed our view by hardcoding the link.
+          spree_registration_path = '/signup'
+          ofn_registration_path = '/register'
+          spree_get :edit
+          expect(response.body).to_not match spree_registration_path
+          expect(response.body).to match ofn_registration_path
+        end
+      end
+
+      describe "when an item has insufficient stock" do
+        before do
+          variant.update_attributes! on_hand: 3
+        end
+
+        it "displays a flash message when we view the cart" do
+          spree_get :edit
+          expect(response.status).to eq 200
+          expect(flash[:error]).to eq("An item in your cart has become unavailable.")
+        end
+      end
+
+      describe "when an item is unavailable" do
+        before do
+          order.order_cycle = create(:simple_order_cycle, distributors: [d], variants: [])
+        end
+
+        it "displays a flash message when we view the cart" do
+          spree_get :edit
+          expect(response.status).to eq 200
+          expect(flash[:error]).to eq("An item in your cart has become unavailable.")
+        end
       end
     end
   end
@@ -143,9 +185,9 @@ describe Spree::OrdersController, type: :controller do
         order = subject.current_order(true)
         li = order.add_variant(create(:simple_product, on_hand: 110).variants.first)
         spree_get :update, order: { line_items_attributes: {
-          "0" => {quantity: "0", id: "9999"},
-          "1" => {quantity: "99", id: li.id}
-        }}
+          "0" => { quantity: "0", id: "9999" },
+          "1" => { quantity: "99", id: li.id }
+        } }
         expect(response.status).to eq(302)
         expect(li.reload.quantity).to eq(99)
       end
@@ -156,13 +198,25 @@ describe Spree::OrdersController, type: :controller do
       li = order.add_variant(create(:simple_product).master)
 
       attrs = {
-        "0" => {quantity: "0", id: "9999"},
-        "1" => {quantity: "99", id: li.id}
+        "0" => { quantity: "0", id: "9999" },
+        "1" => { quantity: "99", id: li.id }
       }
 
-      expect(controller.remove_missing_line_items(attrs)).to eq({
-        "1" => {quantity: "99", id: li.id}
-      })
+      expect(controller.remove_missing_line_items(attrs)).to eq(
+        "1" => { quantity: "99", id: li.id }
+      )
+    end
+
+    it "keeps the adjustments' previous state" do
+      order = subject.current_order(true)
+      line_item = order.add_variant(create(:simple_product, on_hand: 110).variants.first)
+      adjustment = create(:adjustment, adjustable: order)
+
+      spree_get :update, order: { line_items_attributes: {
+        "1" => { quantity: "99", id: line_item.id }
+      } }
+
+      expect(adjustment.state).to eq('open')
     end
   end
 
@@ -176,14 +230,10 @@ describe Spree::OrdersController, type: :controller do
       let(:payment_fee) { 5 }
       let(:item_num) { order.line_items.length }
       let(:expected_fees) { item_num * (shipping_fee + payment_fee) }
-      let(:params) { { order: { line_items_attributes: {
-        "0" => {id: line_item1.id, quantity: 1},
-        "1" => {id: line_item2.id, quantity: 0}
-      } } } }
 
       before do
-        Spree::Config.shipment_inc_vat = true
-        Spree::Config.shipping_tax_rate = 0.25
+        allow(Spree::Config).to receive(:shipment_inc_vat) { true }
+        allow(Spree::Config).to receive(:shipping_tax_rate) { 0.25 }
 
         # Sanity check the fees
         expect(order.adjustments.length).to eq 2
@@ -196,14 +246,27 @@ describe Spree::OrdersController, type: :controller do
       end
 
       it "updates the fees" do
-        # Setting quantity of an item to zero
-        spree_post :update, params
+        spree_post :update,
+                   order: { line_items_attributes: {
+                     "0" => { id: line_item1.id, quantity: 1 },
+                     "1" => { id: line_item2.id, quantity: 0 }
+                   } }
 
-        # Check if fees got updated
-        order.reload
         expect(order.line_items.count).to eq 1
-        expect(order.adjustment_total).to eq expected_fees - shipping_fee - payment_fee
+        expect(order.adjustment_total).to eq((item_num - 1) * (shipping_fee + payment_fee))
         expect(order.shipment.adjustment.included_tax).to eq 0.6
+      end
+
+      it "keeps the adjustments' previous state" do
+        spree_post :update,
+                   order: { line_items_attributes: {
+                     "0" => { id: line_item1.id, quantity: 1 },
+                     "1" => { id: line_item2.id, quantity: 0 }
+                   } }
+
+        # The second adjustment (shipping adjustment) is open before the update
+        #   so, restoring its state leaves it open.
+        expect(order.adjustments.map(&:state)).to eq(['closed', 'open'])
       end
     end
 
@@ -215,15 +278,17 @@ describe Spree::OrdersController, type: :controller do
       let(:enterprise_fee) { create(:enterprise_fee, calculator: build(:calculator_per_item) ) }
       let!(:exchange) { create(:exchange, incoming: true, sender: variant.product.supplier, receiver: order_cycle.coordinator, variants: [variant], enterprise_fees: [enterprise_fee]) }
       let!(:order) do
-        order = create(:completed_order_with_totals, user: user, distributor: distributor, order_cycle: order_cycle)
+        order = create(:completed_order_with_totals, line_items_count: 1, user: user, distributor: distributor, order_cycle: order_cycle)
         order.reload.line_items.first.update_attributes(variant_id: variant.id)
         while !order.completed? do break unless order.next! end
         order.update_distribution_charge!
         order
       end
-      let(:params) { { order: { line_items_attributes: {
-        "0" => { id: order.line_items.first.id, quantity: 2 }
-      } } } }
+      let(:params) {
+        { order: { line_items_attributes: {
+          "0" => { id: order.line_items.first.id, quantity: 2 }
+        } } }
+      }
 
       before do
         allow(subject).to receive(:spree_current_user) { order.user }
@@ -241,19 +306,19 @@ describe Spree::OrdersController, type: :controller do
     end
   end
 
-  describe "removing items from a completed order" do
-    let(:order) { create(:completed_order_with_totals) }
-    let!(:line_item) { order.reload.line_items.first }
-    let(:params) { { order: {} } }
+  describe "request to remove items from a completed order" do
+    let(:order) { create(:completed_order_with_totals, line_items_count: 2) }
+    let(:params) {
+      { order: { line_items_attributes: {
+        "0" => { id: order.line_items.first.id, quantity: 1 },
+        "1" => { id: order.line_items.second.id, quantity: 0 }
+      } } }
+    }
 
     before { allow(subject).to receive(:order_to_update) { order } }
 
-    context "when more than one item remains" do
-      before do
-        params[:order][:line_items_attributes] = { "0" => {quantity: "1", id: line_item.id} }
-      end
-
-      it "removes the item" do
+    context "one item would remain in the order" do
+      it "removes the items" do
         spree_post :update, params
         expect(flash[:error]).to be nil
         expect(response).to redirect_to spree.order_path(order)
@@ -261,23 +326,21 @@ describe Spree::OrdersController, type: :controller do
       end
     end
 
-    context "when only one item remains" do
-      before do
-        params[:order][:line_items_attributes] = { "0" => {quantity: "0", id: line_item.id} }
-      end
+    context "no item would remain in the order" do
+      before { params[:order][:line_items_attributes]["0"][:quantity] = 0 }
 
-      it "does not remove the item, flash suggests cancellation" do
+      it "does not remove items, flash suggests cancellation" do
         spree_post :update, params
         expect(flash[:error]).to eq I18n.t(:orders_cannot_remove_the_final_item)
         expect(response).to redirect_to spree.order_path(order)
-        expect(order.reload.line_items.count).to eq 1
+        expect(order.reload.line_items.count).to eq 2
       end
     end
   end
 
   describe "#order_to_update" do
     let!(:current_order) { double(:current_order) }
-    let(:params) { { } }
+    let(:params) { {} }
 
     before do
       allow(controller).to receive(:current_order) { current_order }
@@ -292,7 +355,7 @@ describe Spree::OrdersController, type: :controller do
 
     context "when an order_id is given in params" do
       before do
-        params.merge!({id: order.number})
+        params.merge!(id: order.number)
       end
 
       context "and the order is not complete" do
@@ -318,7 +381,6 @@ describe Spree::OrdersController, type: :controller do
           before { allow(controller).to receive(:can?).with(:update, order) { true } }
 
           context "and the order is not editable" do
-
             it "returns nil" do
               expect(controller.send(:order_to_update)).to eq nil
             end
@@ -371,7 +433,7 @@ describe Spree::OrdersController, type: :controller do
       end
 
       context "when the order is complete" do
-        let(:order) { create(:completed_order_with_totals, user: user) }
+        let(:order) { create(:completed_order_with_totals, user: user, distributor: create(:distributor_enterprise)) }
 
         before do
           setup_email
@@ -385,7 +447,6 @@ describe Spree::OrdersController, type: :controller do
       end
     end
   end
-
 
   private
 

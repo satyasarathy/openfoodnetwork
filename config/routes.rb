@@ -5,7 +5,6 @@ Openfoodnetwork::Application.routes.draw do
   get "/enterprises", to: redirect("/")
   get "/products", to: redirect("/")
   get "/products/:id", to: redirect("/")
-  get "/t/products/:id", to: redirect("/")
   get "/about_us", to: redirect(ContentConfig.footer_about_url)
 
   get "/login", to: redirect("/#/login")
@@ -27,13 +26,13 @@ Openfoodnetwork::Application.routes.draw do
   get "/cart", :to => "spree/orders#edit", :as => :cart
   put "/cart", :to => "spree/orders#update", :as => :update_cart
   put "/cart/empty", :to => 'spree/orders#empty', :as => :empty_cart
+  get '/orders/:id/token/:token' => 'spree/orders#show', :as => :token_order
 
   resource :cart, controller: "cart" do
     post :populate
   end
 
   resource :shop, controller: "shop" do
-    get :products
     post :order_cycle
     get :order_cycle
     get :changeable_orders_alert
@@ -88,38 +87,7 @@ Openfoodnetwork::Application.routes.draw do
   get '/:id/shop', to: 'enterprises#shop', as: 'enterprise_shop'
   get "/enterprises/:permalink", to: redirect("/") # Legacy enterprise URL
 
-  namespace :api do
-    resources :enterprises do
-      post :update_image, on: :member
-      get :managed, on: :collection
-      get :accessible, on: :collection
-
-      resource :logo, only: [:destroy]
-      resource :promo_image, only: [:destroy]
-    end
-
-    resources :order_cycles do
-      get :managed, on: :collection
-      get :accessible, on: :collection
-    end
-
-    resources :orders, only: [:index]
-
-    resource :status do
-      get :job_queue
-    end
-
-    resources :customers, only: [:index, :update]
-
-    resources :enterprise_fees, only: [:destroy]
-
-    post '/product_images/:product_id', to: 'product_images#update_product_image'
-  end
-
   get 'sitemap.xml', to: 'sitemap#index', defaults: { format: 'xml' }
-
-  # Mount Web engine routes
-  mount Web::Engine, :at => '/'
 
   # Mount Spree's routes
   mount Spree::Core::Engine, :at => '/'

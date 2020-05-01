@@ -9,12 +9,6 @@ module Spree
 
       attr_accessible :preferred_enterprise_id
 
-      CARD_TYPE_MAPPING = {
-        'American Express' => 'american_express',
-        'Diners Club' => 'diners_club',
-        'Visa' => 'visa'
-      }.freeze
-
       def method_type
         'stripe'
       end
@@ -63,7 +57,7 @@ module Spree
       # In this gateway, what we call 'secret_key' is the 'login'
       def options
         options = super
-        options.merge(:login => Stripe.api_key)
+        options.merge(login: Stripe.api_key)
       end
 
       def options_for_purchase_or_auth(money, creditcard, gateway_options)
@@ -75,11 +69,6 @@ module Spree
         creditcard = token_from_card_profile_ids(creditcard)
 
         [money, creditcard, options]
-      end
-
-      def update_source!(source)
-        source.cc_type = CARD_TYPE_MAPPING[source.cc_type] if CARD_TYPE_MAPPING.include?(source.cc_type)
-        source
       end
 
       def token_from_card_profile_ids(creditcard)
@@ -97,7 +86,7 @@ module Spree
       end
 
       def tokenize_instance_customer_card(customer, card)
-        token = Stripe::Token.create({card: card, customer: customer}, stripe_account: stripe_account_id)
+        token = Stripe::Token.create({ card: card, customer: customer }, stripe_account: stripe_account_id)
         token.id
       end
 
@@ -107,6 +96,7 @@ module Spree
 
       def ensure_enterprise_selected
         return if preferred_enterprise_id.andand > 0
+
         errors.add(:stripe_account_owner, I18n.t(:error_required))
       end
     end

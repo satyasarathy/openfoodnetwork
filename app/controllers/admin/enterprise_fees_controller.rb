@@ -1,8 +1,7 @@
 module Admin
   class EnterpriseFeesController < ResourceController
-    before_filter :load_enterprise_fee_set, :only => :index
+    before_filter :load_enterprise_fee_set, only: :index
     before_filter :load_data
-
 
     def index
       @include_calculators = params[:include_calculators].present?
@@ -29,23 +28,19 @@ module Admin
 
     def bulk_update
       @enterprise_fee_set = EnterpriseFeeSet.new(params[:enterprise_fee_set])
-      if @enterprise_fee_set.save
-        redirect_path = main_app.admin_enterprise_fees_path
-        if params.key? :enterprise_id
-          redirect_path = main_app.admin_enterprise_fees_path(enterprise_id: params[:enterprise_id])
-        end
-        redirect_to redirect_path, :notice => I18n.t(:enterprise_fees_update_notice)
 
+      if @enterprise_fee_set.save
+        redirect_to redirect_path, notice: I18n.t(:enterprise_fees_update_notice)
       else
-        render :index
+        redirect_to redirect_path,
+                    flash: { error: @enterprise_fee_set.errors.full_messages.to_sentence }
       end
     end
-
 
     private
 
     def load_enterprise_fee_set
-      @enterprise_fee_set = EnterpriseFeeSet.new :collection => collection
+      @enterprise_fee_set = EnterpriseFeeSet.new collection: collection
     end
 
     def load_data
@@ -60,7 +55,7 @@ module Admin
         coordinator = Enterprise.find_by_id(params[:coordinator_id]) if params[:coordinator_id]
         order_cycle = OrderCycle.new(coordinator: coordinator) if order_cycle.nil? && coordinator.present?
         enterprises = OpenFoodNetwork::OrderCyclePermissions.new(spree_current_user, order_cycle).visible_enterprises
-        return EnterpriseFee.for_enterprises(enterprises).order('enterprise_id', 'fee_type', 'name')
+        EnterpriseFee.for_enterprises(enterprises).order('enterprise_id', 'fee_type', 'name')
       else
         collection = EnterpriseFee.managed_by(spree_current_user).order('enterprise_id', 'fee_type', 'name')
         collection = collection.for_enterprise(current_enterprise) if current_enterprise
@@ -76,5 +71,12 @@ module Admin
       Enterprise.find params[:enterprise_id] if params.key? :enterprise_id
     end
 
+    def redirect_path
+      if params.key? :enterprise_id
+        return main_app.admin_enterprise_fees_path(enterprise_id: params[:enterprise_id])
+      end
+
+      main_app.admin_enterprise_fees_path
+    end
   end
 end

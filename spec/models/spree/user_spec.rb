@@ -4,7 +4,7 @@ describe Spree.user_class do
   include OpenFoodNetwork::EmailHelper
 
   describe "associations" do
-    it { should have_many(:owned_enterprises) }
+    it { is_expected.to have_many(:owned_enterprises) }
 
     describe "addresses" do
       let(:user) { create(:user, bill_address: create(:address)) }
@@ -68,7 +68,7 @@ describe Spree.user_class do
       e = create(:enterprise)
       c = create(:customer, user: u, enterprise: e)
 
-      u.customer_of(e).should == c
+      expect(u.customer_of(e)).to eq(c)
     end
   end
 
@@ -76,9 +76,11 @@ describe Spree.user_class do
     it "should send a confirmation email" do
       setup_email
 
-      expect do
-        create(:user, email: 'new_user@example.com', confirmation_sent_at: nil, confirmed_at: nil)
-      end.to send_confirmation_instructions
+      performing_deliveries do
+        expect do
+          create(:user, email: 'new_user@example.com', confirmation_sent_at: nil, confirmed_at: nil)
+        end.to send_confirmation_instructions
+      end
 
       sent_mail = ActionMailer::Base.deliveries.last
       expect(sent_mail.to).to eq ['new_user@example.com']
@@ -145,7 +147,7 @@ describe Spree.user_class do
     end
 
     context "when the user has one credit card" do
-      let!(:card) { create(:credit_card, user: user) }
+      let!(:card) { create(:stored_credit_card, user: user) }
 
       it "should be assigned as the default and be returned" do
         expect(card.reload.is_default).to be true
@@ -154,12 +156,71 @@ describe Spree.user_class do
     end
 
     context "when the user has more than one card" do
-      let!(:non_default_card) { create(:credit_card, user: user) }
-      let!(:default_card) { create(:credit_card, user: user, is_default: true) }
+      let!(:non_default_card) { create(:stored_credit_card, user: user) }
+      let!(:default_card) { create(:stored_credit_card, user: user, is_default: true) }
 
       it "returns the card which is specified as the default" do
         expect(user.default_card.id).to be default_card.id
       end
+    end
+  end
+
+  describe '#superadmin?' do
+    let(:user) { create(:user) }
+
+    context 'when the user has an admin spree role' do
+      before { user.spree_roles << Spree::Role.create(name: 'admin') }
+
+      it 'returns true' do
+        expect(user.superadmin?).to eq(true)
+      end
+    end
+
+    context 'when the user does not have an admin spree role' do
+      it 'returns false' do
+        expect(user.superadmin?).to eq(false)
+      end
+    end
+  end
+
+  before(:all) { Spree::Role.create name: 'admin' }
+
+  it '#admin?' do
+    expect(create(:admin_user).admin?).to be_truthy
+    expect(create(:user).admin?).to be_falsey
+  end
+
+  context '#create' do
+    let(:user) { build(:user) }
+
+    it 'should not be anonymous' do
+      expect(user).not_to be_anonymous
+    end
+  end
+
+  context '#destroy' do
+    it 'can not delete if it has completed orders' do
+      order = build(:order, completed_at: Time.zone.now)
+      order.save
+      user = order.user
+
+      expect { user.destroy }.to raise_exception(Spree::User::DestroyWithOrdersError)
+    end
+  end
+
+  context 'anonymous!' do
+    let(:user) { Spree::User.anonymous! }
+
+    it 'should create a new user' do
+      expect(user.new_record?).to be_falsey
+    end
+
+    it 'should create a user with an example.net email' do
+      expect(user.email).to match(/@example.net$/)
+    end
+
+    it 'should be anonymous' do
+      expect(user).to be_anonymous
     end
   end
 end

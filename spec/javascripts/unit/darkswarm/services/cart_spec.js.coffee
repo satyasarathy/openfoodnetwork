@@ -45,6 +45,13 @@ describe 'Cart service', ->
     Cart.adjust(order.line_items[0])
     expect(Cart.line_items.length).toEqual 0
 
+  it "does not add an item in the cart without quantity", ->
+    Cart.line_items = []
+
+    spyOn(Cart, 'orderChanged')
+    order.line_items[0].max_quantity = 0
+    expect(Cart.orderChanged).not.toHaveBeenCalled()
+
   it "sums the quantity of each line item for cart total", ->
     order.line_items[0].quantity = 2
     expect(Cart.total_item_count()).toEqual 2
@@ -145,11 +152,11 @@ describe 'Cart service', ->
         expect(li.max_quantity).toEqual 0
 
       it "resets the count on hand available", ->
-        li = {variant: {id: 1, count_on_hand: 10}, quantity: 5}
+        li = {variant: {id: 1, on_hand: 10}, quantity: 5}
         Cart.line_items = [li]
         stockLevels = {1: {quantity: 0, max_quantity: 0, on_hand: 0}}
         Cart.compareAndNotifyStockLevels stockLevels
-        expect(li.variant.count_on_hand).toEqual 0
+        expect(li.variant.on_hand).toEqual 0
 
     describe "when the quantity available is less than that requested", ->
       it "reduces the quantity in the cart", ->
@@ -172,7 +179,7 @@ describe 'Cart service', ->
         Cart.line_items = [li]
         stockLevels = {1: {quantity: 5, on_hand: 6}}
         Cart.compareAndNotifyStockLevels stockLevels
-        expect(li.variant.count_on_hand).toEqual 6
+        expect(li.variant.on_hand).toEqual 6
 
     describe "when the client-side quantity has been increased during the request", ->
       it "does not reset the quantity", ->

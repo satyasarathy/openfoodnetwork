@@ -8,11 +8,11 @@ feature 'Account and Billing Settings' do
     let!(:admin) { create(:admin_user) }
 
     before do
-      Spree::Config.set({
+      Spree::Config.set(
         products_require_tax_category: false,
         shipment_inc_vat: false,
         shipping_tax_rate: 0
-      })
+      )
     end
 
     before do
@@ -21,7 +21,7 @@ feature 'Account and Billing Settings' do
 
     context "as an admin user" do
       it "loads the page" do
-        visit spree.admin_path
+        visit spree.admin_dashboard_path
         click_link "Configuration"
         click_link "Tax Settings"
 

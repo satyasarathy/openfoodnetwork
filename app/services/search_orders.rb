@@ -10,6 +10,7 @@ class SearchOrders
 
   def pagination_data
     return unless using_pagination?
+
     {
       results: @orders.total_count,
       pages: @orders.num_pages,
@@ -23,9 +24,10 @@ class SearchOrders
   attr_reader :params, :current_user
 
   def fetch_orders
-    @search = OpenFoodNetwork::Permissions.new(current_user).editable_orders.ransack(params[:q])
+    @search = ::Permissions::Order.new(current_user).editable_orders.ransack(params[:q])
 
     return paginated_results if using_pagination?
+
     @search.result(distinct: true)
   end
 

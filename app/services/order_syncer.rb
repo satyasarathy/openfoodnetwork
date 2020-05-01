@@ -1,6 +1,5 @@
 # Responsible for ensuring that any updates to a Subscription are propagated to any
 # orders belonging to that Subscription which have been instantiated
-
 class OrderSyncer
   attr_reader :order_update_issues
 
@@ -11,8 +10,9 @@ class OrderSyncer
   end
 
   def sync!
-    future_and_undated_orders.all? do |order|
-      order.assign_attributes(customer_id: customer_id, email: customer.andand.email, distributor_id: shop_id)
+    orders_in_order_cycles_not_closed.all? do |order|
+      order.assign_attributes(customer_id: customer_id, email: customer.andand.email,
+                              distributor_id: shop_id)
       update_associations_for(order)
       line_item_syncer.sync!(order)
       order.save
@@ -25,36 +25,36 @@ class OrderSyncer
 
   delegate :orders, :bill_address, :ship_address, :subscription_line_items, to: :subscription
   delegate :shop_id, :customer, :customer_id, to: :subscription
-  delegate :shipping_method, :shipping_method_id, :payment_method, :payment_method_id, to: :subscription
+  delegate :shipping_method, :shipping_method_id,
+           :payment_method, :payment_method_id, to: :subscription
   delegate :shipping_method_id_changed?, :shipping_method_id_was, to: :subscription
   delegate :payment_method_id_changed?, :payment_method_id_was, to: :subscription
 
   def update_associations_for(order)
     update_bill_address_for(order) if (bill_address.changes.keys & relevant_address_attrs).any?
-    update_ship_address_for(order) if (ship_address.changes.keys & relevant_address_attrs).any?
     update_shipment_for(order) if shipping_method_id_changed?
+    update_ship_address_for(order)
     update_payment_for(order) if payment_method_id_changed?
   end
 
-  def future_and_undated_orders
-    return @future_and_undated_orders unless @future_and_undated_orders.nil?
-    @future_and_undated_orders = orders.joins(:order_cycle).merge(OrderCycle.not_closed).readonly(false)
+  def orders_in_order_cycles_not_closed
+    return @orders_in_order_cycles_not_closed unless @orders_in_order_cycles_not_closed.nil?
+
+    @orders_in_order_cycles_not_closed = orders.joins(:order_cycle).
+      merge(OrderCycle.not_closed).readonly(false)
   end
 
   def update_bill_address_for(order)
     unless addresses_match?(order.bill_address, bill_address)
       return order_update_issues.add(order, I18n.t('bill_address'))
     end
+
     order.bill_address.update_attributes(bill_address.attributes.slice(*relevant_address_attrs))
   end
 
-  def update_ship_address_for(order)
-    return unless ship_address_updatable?(order)
-    order.ship_address.update_attributes(ship_address.attributes.slice(*relevant_address_attrs))
-  end
-
   def update_payment_for(order)
-    payment = order.payments.with_state('checkout').where(payment_method_id: payment_method_id_was).last
+    payment = order.payments.
+      with_state('checkout').where(payment_method_id: payment_method_id_was).last
     if payment
       payment.andand.void_transaction!
       order.payments.create(payment_method_id: payment_method_id, amount: order.reload.total)
@@ -66,14 +66,25 @@ class OrderSyncer
   end
 
   def update_shipment_for(order)
-    shipment = order.shipments.with_state('pending').where(shipping_method_id: shipping_method_id_was).last
-    if shipment
-      shipment.update_attributes(shipping_method_id: shipping_method_id)
-      order.update_attribute(:shipping_method_id, shipping_method_id)
+    return if pending_shipment_with?(order, shipping_method_id) # No need to do anything.
+
+    if pending_shipment_with?(order, shipping_method_id_was)
+      order.select_shipping_method(shipping_method_id)
     else
-      unless order.shipments.with_state('pending').where(shipping_method_id: shipping_method_id).any?
-        order_update_issues.add(order, I18n.t('admin.shipping_method'))
-      end
+      order_update_issues.add(order, I18n.t('admin.shipping_method'))
+    end
+  end
+
+  def update_ship_address_for(order)
+    # The conditions here are to achieve the same behaviour in earlier versions of Spree, where
+    # switching from pick-up to delivery affects whether simultaneous changes to shipping address
+    # are ignored or not.
+    pickup_to_delivery = force_ship_address_required?(order)
+    if !pickup_to_delivery || order.shipment.present?
+      save_ship_address_in_order(order) if (ship_address.changes.keys & relevant_address_attrs).any?
+    end
+    if !pickup_to_delivery || order.shipment.blank?
+      order.updater.shipping_address_from_distributor
     end
   end
 
@@ -92,6 +103,7 @@ class OrderSyncer
     return true if force_ship_address_required?(order)
     return false unless order.shipping_method.require_ship_address?
     return true if addresses_match?(order.ship_address, ship_address)
+
     order_update_issues.add(order, I18n.t('ship_address'))
     false
   end
@@ -101,9 +113,22 @@ class OrderSyncer
   # address on the order matches the shop's address
   def force_ship_address_required?(order)
     return false unless shipping_method.require_ship_address?
-    distributor_address = order.__send__(:address_from_distributor)
+
+    distributor_address = order.address_from_distributor
     relevant_address_attrs.all? do |attr|
       order.ship_address[attr] == distributor_address[attr]
     end
+  end
+
+  def save_ship_address_in_order(order)
+    return unless ship_address_updatable?(order)
+
+    order.ship_address.update_attributes(ship_address.attributes.slice(*relevant_address_attrs))
+  end
+
+  def pending_shipment_with?(order, shipping_method_id)
+    return false unless order.shipment.present? && order.shipment.state == "pending"
+
+    order.shipping_method.id == shipping_method_id
   end
 end

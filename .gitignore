@@ -31,13 +31,14 @@ public/system
 public/stylesheets
 public/images
 public/spree
+public/assets
 config/abr.yml
 config/initializers/feature_toggle.rb
-config/initializers/db2fog.rb
 NERD_tree*
 coverage
 libpeerconnection.log
 /config/application.yml
+/config/newrelic.yml
 node_modules
 vendor/bundle/
 coverage

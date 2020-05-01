@@ -1,16 +1,16 @@
 module OpenFoodNetwork
   class OrderAndDistributorReport
-
     def initialize(user, params = {}, render_table = false)
       @params = params
       @user = user
       @render_table = render_table
 
-      @permissions = OpenFoodNetwork::Permissions.new(user)
+      @permissions = ::Permissions::Order.new(user, @params[:q])
     end
 
     def header
-      [I18n.t(:report_header_order_date),
+      [
+        I18n.t(:report_header_order_date),
         I18n.t(:report_header_order_id),
         I18n.t(:report_header_customer_name),
         I18n.t(:report_header_customer_email),
@@ -28,7 +28,9 @@ module OpenFoodNetwork
         I18n.t(:report_header_distributor_address),
         I18n.t(:report_header_distributor_city),
         I18n.t(:report_header_distributor_postcode),
-        I18n.t(:report_header_shipping_instructions)]
+        I18n.t(:report_header_shipping_method),
+        I18n.t(:report_header_shipping_instructions)
+      ]
     end
 
     def search
@@ -40,15 +42,17 @@ module OpenFoodNetwork
 
       orders = search.result
 
-      # If empty array is passed in, the where clause will return all line_items, which is bad
-      orders_with_hidden_details =
-        @permissions.editable_orders.empty? ? orders : orders.where('id NOT IN (?)', @permissions.editable_orders)
-
-      orders.select{ |order| orders_with_hidden_details.include? order }.each do |order|
+      orders.select{ |order| orders_with_hidden_details(orders).include? order }.each do |order|
         # TODO We should really be hiding customer code here too, but until we
         # have an actual association between order and customer, it's a bit tricky
-        order.bill_address.andand.assign_attributes(firstname: I18n.t('admin.reports.hidden'), lastname: "", phone: "", address1: "", address2: "", city: "", zipcode: "", state: nil)
-        order.ship_address.andand.assign_attributes(firstname: I18n.t('admin.reports.hidden'), lastname: "", phone: "", address1: "", address2: "", city: "", zipcode: "", state: nil)
+        order.bill_address.andand.
+          assign_attributes(firstname: I18n.t('admin.reports.hidden'),
+                            lastname: "", phone: "", address1: "", address2: "",
+                            city: "", zipcode: "", state: nil)
+        order.ship_address.andand.
+          assign_attributes(firstname: I18n.t('admin.reports.hidden'),
+                            lastname: "", phone: "", address1: "", address2: "",
+                            city: "", zipcode: "", state: nil)
         order.assign_attributes(email: I18n.t('admin.reports.hidden'))
       end
 
@@ -56,6 +60,17 @@ module OpenFoodNetwork
     end
 
     private
+
+    def orders_with_hidden_details(orders)
+      # If empty array is passed in, the where clause will return all line_items, which is bad
+      if @permissions.editable_orders.empty?
+        orders
+      else
+        orders.
+          where('spree_orders.id NOT IN (?)',
+                @permissions.editable_orders.select(&:id))
+      end
+    end
 
     def line_item_details(orders)
       order_and_distributor_details = []
@@ -95,6 +110,7 @@ module OpenFoodNetwork
         order.distributor.address.address1,
         order.distributor.address.city,
         order.distributor.address.zipcode,
+        order.shipping_method.name,
         order.special_instructions
       ]
     end

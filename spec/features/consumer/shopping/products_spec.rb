@@ -30,14 +30,16 @@ feature "As a consumer I want to view products", js: true do
         product.save!
 
         visit shop_path
-        select "monday", :from => "order_cycle_id"
+        select "monday", from: "order_cycle_id"
 
+        expect(page).to have_content product.name
         click_link product.name
+
         expect(page).to have_selector '.reveal-modal'
         modal_should_be_open_for product
 
         within(".reveal-modal") do
-          html.should include("<p><b>Formatted</b> product description.</p>")
+          expect(html).to include("<p><b>Formatted</b> product description.</p>")
         end
       end
 
@@ -46,15 +48,17 @@ feature "As a consumer I want to view products", js: true do
         product.save!
 
         visit shop_path
-        select "monday", :from => "order_cycle_id"
+        select "monday", from: "order_cycle_id"
 
+        expect(page).to have_content product.name
         click_link product.name
+
         expect(page).to have_selector '.reveal-modal'
         modal_should_be_open_for product
 
         within(".reveal-modal") do
-          html.should include("<p>Safe</p>")
-          html.should_not include("<script>alert('Dangerous!');</script>")
+          expect(html).to include("<p>Safe</p>")
+          expect(html).not_to include("<script>alert('Dangerous!');</script>")
         end
       end
     end

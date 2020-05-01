@@ -76,10 +76,19 @@ describe ProxyOrder, type: :model do
   end
 
   describe "resume" do
-    let!(:payment_method) { create(:payment_method) }
-    let(:order) { create(:order_with_totals, shipping_method: create(:shipping_method)) }
+    let!(:shipment) { create(:shipment) }
+    let(:order) {
+      create(:order_with_totals, ship_address: create(:address),
+                                 shipments: [shipment],
+                                 payments: [create(:payment)],
+                                 distributor: shipment.shipping_method.distributors.first)
+    }
     let(:proxy_order) { create(:proxy_order, order: order, canceled_at: Time.zone.now) }
     let(:order_cycle) { proxy_order.order_cycle }
+
+    around do |example|
+      Timecop.freeze(Time.zone.now) { example.run }
+    end
 
     context "when the order cycle is not yet closed" do
       before { order_cycle.update_attributes(orders_open_at: 1.day.ago, orders_close_at: 3.days.from_now) }
@@ -196,6 +205,6 @@ describe ProxyOrder, type: :model do
     # We still need to use be_within, because the Database timestamp is not as
     # accurate as the Rails timestamp. If we use `eq`, we have differing nano
     # seconds.
-    expect(subject.reload.canceled_at).to be_within(2.second).of Time.zone.now
+    expect(subject.reload.canceled_at).to be_within(2.seconds).of Time.zone.now
   end
 end

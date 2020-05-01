@@ -21,16 +21,12 @@ class UserRegistrationsController < Spree::UserRegistrationsController
     associate_user
 
     respond_to do |format|
-      format.html do
-        set_flash_message(:success, :signed_up_but_unconfirmed)
-        redirect_to after_sign_in_path_for(@user)
-      end
       format.js do
         render json: { email: @user.email }
       end
     end
-  rescue StandardError => error
-    OpenFoodNetwork::ErrorLogger.notify(error)
+  rescue StandardError => e
+    OpenFoodNetwork::ErrorLogger.notify(e)
     render_error(message: I18n.t('unknown_error', scope: I18N_SCOPE))
   end
 
@@ -39,9 +35,6 @@ class UserRegistrationsController < Spree::UserRegistrationsController
   def render_error(errors = {})
     clean_up_passwords(resource)
     respond_to do |format|
-      format.html do
-        render :new
-      end
       format.js do
         render json: errors, status: :unauthorized
       end

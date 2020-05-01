@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'open_food_network/products_and_inventory_report'
 
 module OpenFoodNetwork
   describe ProductsAndInventoryReport do
@@ -13,51 +14,51 @@ module OpenFoodNetwork
       end
 
       it "Should return headers" do
-        subject.header.should == [
-          "Supplier",
-          "Producer Suburb",
-          "Product",
-          "Product Properties",
-          "Taxons",
-          "Variant Value",
-          "Price",
-          "Group Buy Unit Quantity",
-          "Amount",
-          "SKU"
-        ]
+        expect(subject.header).to eq([
+                                       "Supplier",
+                                       "Producer Suburb",
+                                       "Product",
+                                       "Product Properties",
+                                       "Taxons",
+                                       "Variant Value",
+                                       "Price",
+                                       "Group Buy Unit Quantity",
+                                       "Amount",
+                                       "SKU"
+                                     ])
       end
 
       it "should build a table from a list of variants" do
         variant = double(:variant, sku: "sku",
-                        full_name: "Variant Name",
-                        count_on_hand: 10,
-                        price: 100)
-        variant.stub_chain(:product, :supplier, :name).and_return("Supplier")
-        variant.stub_chain(:product, :supplier, :address, :city).and_return("A city")
-        variant.stub_chain(:product, :name).and_return("Product Name")
-        variant.stub_chain(:product, :properties).and_return [double(name: "property1"), double(name: "property2")]
-        variant.stub_chain(:product, :taxons).and_return [double(name: "taxon1"), double(name: "taxon2")]
-        variant.stub_chain(:product, :group_buy_unit_size).and_return(21)
-        subject.stub(:variants).and_return [variant]
+                                   full_name: "Variant Name",
+                                   count_on_hand: 10,
+                                   price: 100)
+        allow(variant).to receive_message_chain(:product, :supplier, :name).and_return("Supplier")
+        allow(variant).to receive_message_chain(:product, :supplier, :address, :city).and_return("A city")
+        allow(variant).to receive_message_chain(:product, :name).and_return("Product Name")
+        allow(variant).to receive_message_chain(:product, :properties).and_return [double(name: "property1"), double(name: "property2")]
+        allow(variant).to receive_message_chain(:product, :taxons).and_return [double(name: "taxon1"), double(name: "taxon2")]
+        allow(variant).to receive_message_chain(:product, :group_buy_unit_size).and_return(21)
+        allow(subject).to receive(:variants).and_return [variant]
 
-        subject.table.should == [[
-          "Supplier",
-          "A city",
-          "Product Name",
-          "property1, property2",
-          "taxon1, taxon2",
-          "Variant Name",
-          100,
-          21,
-          "",
-          "sku"
-        ]]
+        expect(subject.table).to eq([[
+                                      "Supplier",
+                                      "A city",
+                                      "Product Name",
+                                      "property1, property2",
+                                      "taxon1, taxon2",
+                                      "Variant Name",
+                                      100,
+                                      21,
+                                      "",
+                                      "sku"
+                                    ]])
       end
 
       it "fetches variants for some params" do
-        subject.should_receive(:child_variants).and_return ["children"]
-        subject.should_receive(:filter).with(['children']).and_return ["filter_children"]
-        subject.variants.should == ["filter_children"]
+        expect(subject).to receive(:child_variants).and_return ["children"]
+        expect(subject).to receive(:filter).with(['children']).and_return ["filter_children"]
+        expect(subject.variants).to eq(["filter_children"])
       end
     end
 
@@ -78,19 +79,19 @@ module OpenFoodNetwork
       describe "fetching child variants" do
         it "returns some variants" do
           product1 = create(:simple_product, supplier: supplier)
-          variant_1 = product1.variants.first
-          variant_2 = create(:variant, product: product1)
+          variant1 = product1.variants.first
+          variant2 = create(:variant, product: product1)
 
-          subject.child_variants.should match_array [variant_1, variant_2]
+          expect(subject.child_variants).to match_array [variant1, variant2]
         end
 
         it "should only return variants managed by the user" do
           product1 = create(:simple_product, supplier: create(:supplier_enterprise))
           product2 = create(:simple_product, supplier: supplier)
-          variant_1 = product1.variants.first
-          variant_2 = product2.variants.first
+          variant1 = product1.variants.first
+          variant2 = product2.variants.first
 
-          subject.child_variants.should == [variant_2]
+          expect(subject.child_variants).to eq([variant2])
         end
       end
 
@@ -100,21 +101,21 @@ module OpenFoodNetwork
           product1 = create(:simple_product, supplier: supplier)
           product2 = create(:simple_product, supplier: supplier)
 
-          subject.filter(Spree::Variant.scoped).should match_array [product1.master, product1.variants.first, product2.master, product2.variants.first]
+          expect(subject.filter(Spree::Variant.scoped)).to match_array [product1.master, product1.variants.first, product2.master, product2.variants.first]
         end
         it "should filter deleted products" do
           product1 = create(:simple_product, supplier: supplier)
           product2 = create(:simple_product, supplier: supplier)
-          product2.delete
-          subject.filter(Spree::Variant.scoped).should match_array [product1.master, product1.variants.first]
+          product2.destroy
+          expect(subject.filter(Spree::Variant.scoped)).to match_array [product1.master, product1.variants.first]
         end
         describe "based on report type" do
           it "returns only variants on hand" do
             product1 = create(:simple_product, supplier: supplier, on_hand: 99)
             product2 = create(:simple_product, supplier: supplier, on_hand: 0)
 
-            subject.stub(:params).and_return(report_type: 'inventory')
-            subject.filter(variants).should == [product1.variants.first]
+            allow(subject).to receive(:params).and_return(report_type: 'inventory')
+            expect(subject.filter(variants)).to eq([product1.variants.first])
           end
         end
         it "filters to a specific supplier" do
@@ -122,8 +123,8 @@ module OpenFoodNetwork
           product1 = create(:simple_product, supplier: supplier)
           product2 = create(:simple_product, supplier: supplier2)
 
-          subject.stub(:params).and_return(supplier_id: supplier.id)
-          subject.filter(variants).should == [product1.variants.first]
+          allow(subject).to receive(:params).and_return(supplier_id: supplier.id)
+          expect(subject.filter(variants)).to eq([product1.variants.first])
         end
         it "filters to a specific distributor" do
           distributor = create(:distributor_enterprise)
@@ -131,31 +132,100 @@ module OpenFoodNetwork
           product2 = create(:simple_product, supplier: supplier)
           order_cycle = create(:simple_order_cycle, suppliers: [supplier], distributors: [distributor], variants: [product2.variants.first])
 
-          subject.stub(:params).and_return(distributor_id: distributor.id)
-          subject.filter(variants).should == [product2.variants.first]
+          allow(subject).to receive(:params).and_return(distributor_id: distributor.id)
+          expect(subject.filter(variants)).to eq([product2.variants.first])
         end
+
+        it "ignores variant overrides without filter" do
+          distributor = create(:distributor_enterprise)
+          product = create(:simple_product, supplier: supplier, price: 5)
+          variant = product.variants.first
+          order_cycle = create(:simple_order_cycle, suppliers: [supplier], distributors: [distributor], variants: [product.variants.first])
+          create(:variant_override, hub: distributor, variant: variant, price: 2)
+
+          result = subject.filter(variants)
+
+          expect(result.first.price).to eq 5
+        end
+
+        it "considers variant overrides with distributor" do
+          distributor = create(:distributor_enterprise)
+          product = create(:simple_product, supplier: supplier, price: 5)
+          variant = product.variants.first
+          order_cycle = create(:simple_order_cycle, suppliers: [supplier], distributors: [distributor], variants: [product.variants.first])
+          create(:variant_override, hub: distributor, variant: variant, price: 2)
+
+          allow(subject).to receive(:params).and_return(distributor_id: distributor.id)
+          result = subject.filter(variants)
+
+          expect(result.first.price).to eq 2
+        end
+
         it "filters to a specific order cycle" do
           distributor = create(:distributor_enterprise)
           product1 = create(:simple_product, supplier: supplier)
           product2 = create(:simple_product, supplier: supplier)
           order_cycle = create(:simple_order_cycle, suppliers: [supplier], distributors: [distributor], variants: [product1.variants.first])
 
-          subject.stub(:params).and_return(order_cycle_id: order_cycle.id)
-          subject.filter(variants).should == [product1.variants.first]
+          allow(subject).to receive(:params).and_return(order_cycle_id: order_cycle.id)
+          expect(subject.filter(variants)).to eq([product1.variants.first])
         end
 
         it "should do all the filters at once" do
+          # The following data ensures that this spec fails if any of the
+          # filters fail. It's testing the filters are not impacting each other.
           distributor = create(:distributor_enterprise)
-          product1 = create(:simple_product, supplier: supplier)
-          product2 = create(:simple_product, supplier: supplier)
-          order_cycle = create(:simple_order_cycle, suppliers: [supplier], distributors: [distributor], variants: [product1.variants.first])
+          other_distributor = create(:distributor_enterprise)
+          other_supplier = create(:supplier_enterprise)
+          not_filtered_variant = create(:simple_product, supplier: supplier).variants.first
+          variant_filtered_by_order_cycle = create(:simple_product, supplier: supplier).variants.first
+          variant_filtered_by_distributor = create(:simple_product, supplier: supplier).variants.first
+          variant_filtered_by_supplier = create(:simple_product, supplier: other_supplier).variants.first
+          variant_filtered_by_stock = create(:simple_product, supplier: supplier, on_hand: 0).variants.first
 
-          subject.stub(:params).and_return(
+          # This OC contains all products except the one that should be filtered
+          # by order cycle. We create a separate OC further down to proof that
+          # the product is passing all other filters.
+          order_cycle = create(
+            :simple_order_cycle,
+            suppliers: [supplier, other_supplier],
+            distributors: [distributor, other_distributor],
+            variants: [
+              not_filtered_variant,
+              variant_filtered_by_distributor,
+              variant_filtered_by_supplier,
+              variant_filtered_by_stock
+            ]
+          )
+
+          # Remove the distribution of one product for one distributor but still
+          # sell it through the other distributor.
+          order_cycle.exchanges.outgoing.find_by_receiver_id(distributor.id).
+            exchange_variants.
+            find_by_variant_id(variant_filtered_by_distributor).
+            destroy
+
+          # Make product available to be filtered later. See OC comment above.
+          create(
+            :simple_order_cycle,
+            suppliers: [supplier],
+            distributors: [distributor, other_distributor],
+            variants: [
+              variant_filtered_by_order_cycle
+            ]
+          )
+
+          allow(subject).to receive(:params).and_return(
             order_cycle_id: order_cycle.id,
             supplier_id: supplier.id,
             distributor_id: distributor.id,
-            report_type: 'inventory')
-          subject.filter(variants)
+            report_type: 'inventory'
+          )
+
+          expect(subject.filter(variants)).to match_array [not_filtered_variant]
+
+          # And it integrates with the ordering of the `variants` method.
+          expect(subject.variants).to match_array [not_filtered_variant]
         end
       end
 

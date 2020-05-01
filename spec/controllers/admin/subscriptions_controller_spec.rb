@@ -179,7 +179,7 @@ describe Admin::SubscriptionsController, type: :controller do
           params.merge!(
             bill_address: address.attributes.except('id'),
             ship_address: address.attributes.except('id'),
-            subscription_line_items: [{ quantity: 2, variant_id: variant.id}]
+            subscription_line_items: [{ quantity: 2, variant_id: variant.id }]
           )
         end
 
@@ -341,11 +341,11 @@ describe Admin::SubscriptionsController, type: :controller do
         end
 
         context 'with subscription_line_items params' do
-          let!(:product2) { create(:product, supplier: shop) }
+          let!(:product2) { create(:product) }
           let!(:variant2) { create(:variant, product: product2, unit_value: '1000', price: 6.00, option_values: []) }
 
           before do
-            params[:subscription_line_items] = [{id: subscription_line_item1.id, quantity: 1, variant_id: variant1.id}, { quantity: 2, variant_id: variant2.id}]
+            params[:subscription_line_items] = [{ id: subscription_line_item1.id, quantity: 1, variant_id: variant1.id }, { quantity: 2, variant_id: variant2.id }]
           end
 
           context 'where the specified variants are not available from the shop' do
@@ -583,7 +583,7 @@ describe Admin::SubscriptionsController, type: :controller do
     end
 
     context 'json' do
-      let(:params) { { format: :json, id: subscription.id } }
+      let(:params) { { format: :json, id: subscription.id, subscription: {} } }
 
       context 'as a regular user' do
         it 'redirects to unauthorized' do
@@ -664,6 +664,15 @@ describe Admin::SubscriptionsController, type: :controller do
               expect(json_response['id']).to eq subscription.id
               expect(subscription.reload.paused_at).to be nil
             end
+
+            context "when there is an open OC and no associated orders exist yet for it (OC was opened when the subscription was paused)" do
+              it "creates an associated order" do
+                spree_put :unpause, params
+
+                expect(subscription.reload.paused_at).to be nil
+                expect(subscription.proxy_orders.size).to be 1
+              end
+            end
           end
         end
       end
@@ -695,7 +704,7 @@ describe Admin::SubscriptionsController, type: :controller do
     end
 
     context "when other payment methods exist" do
-      let!(:stripe) { create(:stripe_payment_method, distributors: [shop], preferred_enterprise_id: shop.id) }
+      let!(:stripe) { create(:stripe_payment_method, distributors: [shop]) }
       let!(:paypal) { Spree::Gateway::PayPalExpress.create!(name: "PayPalExpress", distributor_ids: [shop.id]) }
       let!(:bogus) { create(:bogus_payment_method, distributors: [shop]) }
 

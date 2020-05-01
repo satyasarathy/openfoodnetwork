@@ -17,8 +17,9 @@ module Admin
       respond_to do |format|
         format.html
         format.json do
-          tag_rule_mapping = TagRule.mapping_for(Enterprise.where(id: params[:enterprise_id]))
-          render_as_json @collection, tag_rule_mapping: tag_rule_mapping
+          render_as_json @collection,
+                         tag_rule_mapping: tag_rule_mapping,
+                         customer_tags: customer_tags_by_id
         end
       end
     end
@@ -34,7 +35,7 @@ module Admin
           tag_rule_mapping = TagRule.mapping_for(Enterprise.where(id: @customer.enterprise))
           render_as_json @customer, tag_rule_mapping: tag_rule_mapping
         else
-          render json: { errors: @customer.errors.full_messages }, status: 400
+          render json: { errors: @customer.errors.full_messages }, status: :bad_request
         end
       else
         redirect_to '/unauthorized'
@@ -63,8 +64,14 @@ module Admin
 
     def collection
       return Customer.where("1=0") unless json_request? && params[:enterprise_id].present?
-      enterprise = Enterprise.managed_by(spree_current_user).find_by_id(params[:enterprise_id])
-      Customer.of(enterprise)
+
+      Customer.of(managed_enterprise_id).
+        includes(:bill_address, :ship_address, user: :credit_cards)
+    end
+
+    def managed_enterprise_id
+      @managed_enterprise_id ||= Enterprise.managed_by(spree_current_user).
+        select('enterprises.id').find_by_id(params[:enterprise_id])
     end
 
     def load_managed_shops
@@ -78,6 +85,29 @@ module Admin
 
     def ams_prefix_whitelist
       [:subscription]
+    end
+
+    def tag_rule_mapping
+      TagRule.mapping_for(Enterprise.where(id: managed_enterprise_id))
+    end
+
+    # Fetches tags for all customers of the enterprise and returns a hash indexed by customer_id
+    def customer_tags_by_id
+      customer_tags = ::ActsAsTaggableOn::Tag.
+        joins(:taggings).
+        includes(:taggings).
+        where(taggings:
+                { taggable_type: 'Customer',
+                  taggable_id: Customer.of(managed_enterprise_id),
+                  context: 'tags' })
+
+      customer_tags.each_with_object({}) do |tag, indexed_hash|
+        tag.taggings.each do |tagging|
+          customer_id = tagging.taggable_id
+          indexed_hash[customer_id] ||= []
+          indexed_hash[customer_id] << tag.name
+        end
+      end
     end
   end
 end

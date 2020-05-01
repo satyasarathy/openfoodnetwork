@@ -1,22 +1,33 @@
 require 'open_food_network/referer_parser'
+require_dependency 'spree/authentication_helpers'
 
 class ApplicationController < ActionController::Base
   protect_from_forgery
 
   prepend_before_filter :restrict_iframes
-  before_filter :set_cache_headers # Issue #1213, prevent cart emptying via cache when using back button
+  before_filter :set_cache_headers # prevent cart emptying via cache when using back button #1213
 
   include EnterprisesHelper
+  include Spree::AuthenticationHelpers
 
   def redirect_to(options = {}, response_status = {})
-    ::Rails.logger.error("Redirected by #{caller(1).first rescue "unknown"}")
+    ::Rails.logger.error("Redirected by #{begin
+                                            caller(1).first
+                                          rescue StandardError
+                                            'unknown'
+                                          end}")
     super(options, response_status)
   end
 
   def set_checkout_redirect
-    referer_path = OpenFoodNetwork::RefererParser::path(request.referer)
+    referer_path = OpenFoodNetwork::RefererParser.path(request.referer)
     if referer_path
-      session["spree_user_return_to"] = [main_app.checkout_path].include?(referer_path) ? referer_path : root_path
+      is_checkout_path_the_referer = [main_app.checkout_path].include?(referer_path)
+      session["spree_user_return_to"] = if is_checkout_path_the_referer
+                                          referer_path
+                                        else
+                                          main_app.root_path
+                                        end
     end
   end
 
@@ -27,24 +38,25 @@ class ApplicationController < ActionController::Base
 
   def enable_embedded_styles
     session[:embedded_shopfront] = true
-    render json: {}, status: 200
+    render json: {}, status: :ok
   end
 
   def disable_embedded_styles
     session.delete :embedded_shopfront
     session.delete :shopfront_redirect
-    render json: {}, status: 200
+    render json: {}, status: :ok
   end
 
   protected
 
   def after_sign_in_path_for(resource_or_scope)
     return session[:shopfront_redirect] if session[:shopfront_redirect]
-    stored_location_for(resource_or_scope) || signed_in_root_path(resource_or_scope)
+
+    stored_location_for(resource_or_scope) || main_app.root_path
   end
 
   def after_sign_out_path_for(_resource_or_scope)
-    session[:shopfront_redirect] ? session[:shopfront_redirect] : root_path
+    session[:shopfront_redirect] || main_app.root_path
   end
 
   private
@@ -66,7 +78,7 @@ class ApplicationController < ActionController::Base
 
   def require_distributor_chosen
     unless @distributor = current_distributor
-      redirect_to spree.root_path
+      redirect_to main_app.root_path
       false
     end
   end
@@ -78,17 +90,20 @@ class ApplicationController < ActionController::Base
   end
 
   def check_hub_ready_for_checkout
-    # This condition is more rigourous than required by development to avoid coupling this
-    # condition to every controller spec
-    if current_distributor && current_order &&
-        current_distributor.respond_to?(:ready_for_checkout?) &&
-        !current_distributor.ready_for_checkout?
-
+    if current_distributor_closed?
       current_order.empty!
       current_order.set_distribution! nil, nil
-      flash[:info] = "The hub you have selected is temporarily closed for orders. Please try again later."
-      redirect_to root_url
+      flash[:info] = "The hub you have selected is temporarily closed for orders. "\
+        "Please try again later."
+      redirect_to main_app.root_url
     end
+  end
+
+  def current_distributor_closed?
+    current_distributor &&
+      current_order &&
+      current_distributor.respond_to?(:ready_for_checkout?) &&
+      !current_distributor.ready_for_checkout?
   end
 
   def check_order_cycle_expiry
@@ -97,7 +112,7 @@ class ApplicationController < ActionController::Base
       current_order.empty!
       current_order.set_order_cycle! nil
       flash[:info] = "The order cycle you've selected has just closed. Please try again!"
-      redirect_to root_url
+      redirect_to main_app.root_url
     end
   end
 
@@ -105,10 +120,10 @@ class ApplicationController < ActionController::Base
   # Useful for rendering html within a JSON response, particularly if the specified
   # template or partial then goes on to render further partials without specifying
   # their format.
-  def with_format(format, &block)
+  def with_format(format)
     old_formats = formats
     self.formats = [format]
-    block.call
+    yield
     self.formats = old_formats
     nil
   end
@@ -118,5 +133,4 @@ class ApplicationController < ActionController::Base
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "Fri, 01 Jan 1990 00:00:00 GMT"
   end
-
 end

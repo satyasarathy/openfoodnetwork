@@ -14,10 +14,10 @@ module OpenFoodNetwork
       when "tax_rates"
         [I18n.t(:report_header_order_number),
          I18n.t(:report_header_total_excl_vat, currency_symbol: currency_symbol)] +
-        relevant_rates.map { |rate| "%.1f%% (%s)" % [rate.amount.to_f * 100, currency_symbol] } +
-        [I18n.t(:report_header_total_tax, currency_symbol: currency_symbol),
-         I18n.t(:report_header_total_incl_vat, currency_symbol: currency_symbol)]
-       else
+          relevant_rates.map { |rate| "%.1f%% (%s)" % [rate.amount.to_f * 100, currency_symbol] } +
+          [I18n.t(:report_header_total_tax, currency_symbol: currency_symbol),
+           I18n.t(:report_header_total_incl_vat, currency_symbol: currency_symbol)]
+      else
         [I18n.t(:report_header_order_number),
          I18n.t(:report_header_date),
          I18n.t(:report_header_items),
@@ -34,7 +34,7 @@ module OpenFoodNetwork
     end
 
     def search
-      permissions = OpenFoodNetwork::Permissions.new(user)
+      permissions = ::Permissions::Order.new(user)
       permissions.editable_orders.complete.not_state(:canceled).search(params[:q])
     end
 
@@ -44,6 +44,7 @@ module OpenFoodNetwork
 
     def table
       return [] unless @render_table
+
       case params[:report_type]
       when "tax_rates"
         orders.map do |order|
@@ -63,16 +64,16 @@ module OpenFoodNetwork
       end
     end
 
-
     private
 
     def relevant_rates
       return @relevant_rates unless @relevant_rates.nil?
+
       @relevant_rates = Spree::TaxRate.uniq
     end
 
     def totals_of(line_items)
-      totals = {items: 0, items_total: 0.0, taxable_total: 0.0, sales_tax: 0.0}
+      totals = { items: 0, items_total: 0.0, taxable_total: 0.0, sales_tax: 0.0 }
 
       line_items.each do |line_item|
         totals[:items] += line_item.quantity
@@ -86,7 +87,7 @@ module OpenFoodNetwork
         end
       end
 
-      totals.each_pair do |k, v|
+      totals.each_pair do |k, _v|
         totals[k] = totals[k].round(2)
       end
 

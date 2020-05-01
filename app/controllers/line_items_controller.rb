@@ -23,16 +23,17 @@ class LineItemsController < BaseController
   # List all items the user already ordered in the current order cycle
   def bought_items
     return [] unless current_order_cycle && spree_current_user && current_distributor
+
     current_order_cycle.items_bought_by_user(spree_current_user, current_distributor)
   end
 
   def unauthorized
     status = spree_current_user ? 403 : 401
-    render nothing: true, status: status and return
+    render(nothing: true, status: status) && return
   end
 
   def not_found
-    render nothing: true, status: 404 and return
+    render(nothing: true, status: :not_found) && return
   end
 
   def destroy_with_lock(item)

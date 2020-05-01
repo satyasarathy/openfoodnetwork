@@ -49,7 +49,6 @@ module ProductImport
             VariantOverride.for_hubs([enterprise_id]).count
           else
             Spree::Variant.
-              not_deleted.
               not_master.
               joins(:product).
               where('spree_products.supplier_id IN (?)', enterprise_id).
@@ -75,7 +74,7 @@ module ProductImport
       if settings.importing_into_inventory?
         InventoryResetStrategy
       else
-        ProductsResetStrategy
+        Catalog::ProductImport::ProductsResetStrategy
       end
     end
 
@@ -123,7 +122,6 @@ module ProductImport
 
     def save_new_inventory_item(entry)
       new_item = entry.product_object
-      assign_defaults(new_item, entry)
       new_item.import_date = @import_time
 
       if new_item.valid? && new_item.save
@@ -137,7 +135,6 @@ module ProductImport
 
     def save_existing_inventory_item(entry)
       existing_item = entry.product_object
-      assign_defaults(existing_item, entry)
       existing_item.import_date = @import_time
 
       if existing_item.valid? && existing_item.save
@@ -163,9 +160,8 @@ module ProductImport
       end
 
       product = Spree::Product.new
-      product.assign_attributes(entry.attributes.except('id'))
+      product.assign_attributes(entry.attributes.except('id', 'on_hand', 'on_demand'))
       product.supplier_id = entry.producer_id
-      assign_defaults(product, entry)
 
       if product.save
         ensure_variant_updated(product, entry)
@@ -175,12 +171,11 @@ module ProductImport
         assign_errors product.errors.full_messages, entry.line_number
       end
 
-      @already_created[entry.enterprise_id] = { entry.name => product.id }
+      @already_created.deep_merge! entry.enterprise_id => { entry.name => product.id }
     end
 
     def save_variant(entry)
       variant = entry.product_object
-      assign_defaults(variant, entry)
       variant.import_date = @import_time
 
       if variant.valid? && variant.save
@@ -198,29 +193,6 @@ module ProductImport
                number: line_number),
         errors
       )
-    end
-
-    def assign_defaults(object, entry)
-      # Assigns a default value for a specified field e.g. category='Vegetables', setting this value
-      # either for all entries (overwrite_all), or only for those entries where the field was blank
-      # in the spreadsheet (overwrite_empty), depending on selected import settings
-      return unless settings.defaults(entry)
-
-      settings.defaults(entry).each do |attribute, setting|
-        next unless setting['active']
-
-        case setting['mode']
-        when 'overwrite_all'
-          object.assign_attributes(attribute => setting['value'])
-        when 'overwrite_empty'
-          if object.public_send(attribute).blank? ||
-             ((attribute == 'on_hand' || attribute == 'count_on_hand') &&
-             entry.on_hand_nil)
-
-            object.assign_attributes(attribute => setting['value'])
-          end
-        end
-      end
     end
 
     def display_in_inventory(variant_override, is_new = false)
@@ -249,6 +221,7 @@ module ProductImport
       variant = product.variants.first
       variant.display_name = entry.display_name if entry.display_name
       variant.on_demand = entry.on_demand if entry.on_demand
+      variant.on_hand = entry.on_hand if entry.on_hand
       variant.import_date = @import_time
       variant.save
     end

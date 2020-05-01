@@ -4,7 +4,11 @@
 
 module ProductImport
   class EntryValidator
-    def initialize(current_user, import_time, spreadsheet_data, editable_enterprises, inventory_permissions, reset_counts, import_settings)
+    SKIP_VALIDATE_ON_UPDATE = [:description].freeze
+
+    # rubocop:disable Metrics/ParameterLists
+    def initialize(current_user, import_time, spreadsheet_data, editable_enterprises,
+                   inventory_permissions, reset_counts, import_settings, all_entries)
       @current_user = current_user
       @import_time = import_time
       @spreadsheet_data = spreadsheet_data
@@ -12,7 +16,9 @@ module ProductImport
       @inventory_permissions = inventory_permissions
       @reset_counts = reset_counts
       @import_settings = import_settings
+      @all_entries = all_entries
     end
+    # rubocop:enable Metrics/ParameterLists
 
     def self.non_updatable_fields
       {
@@ -30,6 +36,7 @@ module ProductImport
         assign_enterprise_field(entry)
         enterprise_validation(entry)
         unit_fields_validation(entry)
+        variant_of_product_validation(entry)
 
         next if entry.enterprise_id.blank?
 
@@ -40,6 +47,7 @@ module ProductImport
           category_validation(entry)
           tax_and_shipping_validation(entry, 'tax', entry.tax_category, @spreadsheet_data.tax_index)
           tax_and_shipping_validation(entry, 'shipping', entry.shipping_category, @spreadsheet_data.shipping_index)
+          shipping_presence_validation(entry)
           product_validation(entry)
         end
       end
@@ -54,7 +62,11 @@ module ProductImport
     end
 
     def mark_as_new_variant(entry, product_id)
-      new_variant = Spree::Variant.new(entry.attributes.except('id', 'product_id'))
+      new_variant = Spree::Variant.new(entry.attributes.except('id', 'product_id', 'on_hand', 'on_demand'))
+      new_variant.save
+      new_variant.on_demand = entry.attributes['on_demand'] if entry.attributes['on_demand'].present?
+      new_variant.on_hand = entry.attributes['on_hand'] if entry.attributes['on_hand'].present?
+
       new_variant.product_id = product_id
       check_on_hand_nil(entry, new_variant)
 
@@ -97,6 +109,7 @@ module ProductImport
 
     def name_presence_error(entry)
       return if entry.enterprise.present?
+
       mark_as_invalid(entry,
                       attribute: enterprise_field,
                       error: I18n.t(:error_required))
@@ -105,6 +118,7 @@ module ProductImport
 
     def enterprise_not_found_error(entry)
       return if @spreadsheet_data.enterprises_index[entry.enterprise][:id]
+
       mark_as_invalid(entry,
                       attribute: enterprise_field,
                       error: I18n.t(:error_not_found_in_database,
@@ -114,6 +128,7 @@ module ProductImport
 
     def permissions_error(entry)
       return if permission_by_name?(entry.enterprise)
+
       mark_as_invalid(entry,
                       attribute: enterprise_field,
                       error: I18n.t(:error_no_permission_for_enterprise,
@@ -123,8 +138,7 @@ module ProductImport
 
     def primary_producer_error(entry)
       return if import_into_inventory?
-      return if @spreadsheet_data.
-          enterprises_index[entry.enterprise][:is_primary_producer]
+      return if @spreadsheet_data.enterprises_index[entry.enterprise][:is_primary_producer]
 
       mark_as_invalid(entry,
                       attribute: enterprise_field,
@@ -151,6 +165,31 @@ module ProductImport
 
       # variant_unit_name must be present if unit_type not present
       mark_as_invalid(entry, attribute: 'variant_unit_name', error: I18n.t('admin.product_import.model.conditional_blank')) unless entry.variant_unit_name && entry.variant_unit_name.present?
+    end
+
+    def variant_of_product_validation(entry)
+      return if entry.producer.blank? || entry.name.blank?
+
+      validate_unit_type_unchanged(entry)
+      validate_variant_unit_name_unchanged(entry)
+    end
+
+    def validate_unit_type_unchanged(entry)
+      return if entry.unit_type.blank?
+
+      reference_entry = all_entries_for_product(entry).first
+      return if entry.unit_type.to_s == reference_entry.unit_type.to_s
+
+      mark_as_not_updatable(entry, "unit_type")
+    end
+
+    def validate_variant_unit_name_unchanged(entry)
+      return if entry.variant_unit_name.blank?
+
+      reference_entry = all_entries_for_product(entry).first
+      return if entry.variant_unit_name.to_s == reference_entry.variant_unit_name.to_s
+
+      mark_as_not_updatable(entry, "variant_unit_name")
     end
 
     def producer_validation(entry)
@@ -189,7 +228,7 @@ module ProductImport
       products.flat_map(&:variants).each do |existing_variant|
         unit_scale = existing_variant.product.variant_unit_scale
         unscaled_units = entry.unscaled_units || 0
-        entry.unit_value = unscaled_units * unit_scale
+        entry.unit_value = unscaled_units * unit_scale unless unit_scale.nil?
 
         if entry_matches_existing_variant?(entry, existing_variant)
           variant_override = create_inventory_item(entry, existing_variant)
@@ -229,6 +268,10 @@ module ProductImport
       end
     end
 
+    def shipping_presence_validation(entry)
+      mark_as_invalid(entry, attribute: "shipping_category", error: I18n.t(:error_required)) unless entry.shipping_category_id
+    end
+
     def product_validation(entry)
       products = Spree::Product.where(supplier_id: entry.enterprise_id,
                                       name: entry.name,
@@ -254,6 +297,7 @@ module ProductImport
       new_product = Spree::Product.new
       new_product.assign_attributes(entry.attributes.except('id'))
       new_product.supplier_id = entry.producer_id
+      entry.on_hand = 0 if entry.on_hand.nil?
 
       if new_product.valid?
         entry.validates_as = 'new_product' unless entry.errors?
@@ -278,12 +322,31 @@ module ProductImport
     def product_field_errors(entry, existing_product)
       EntryValidator.non_updatable_fields.each do |display_name, attribute|
         next if attributes_match?(attribute, existing_product, entry) || attributes_blank?(attribute, existing_product, entry)
+        next if ignore_when_updating_product?(attribute)
+
         mark_as_invalid(entry, attribute: display_name, error: I18n.t('admin.product_import.model.not_updatable'))
       end
     end
 
     def attributes_match?(attribute, existing_product, entry)
-      existing_product.public_send(attribute) == entry.public_send(attribute)
+      existing_product_value = existing_product.public_send(attribute)
+      entry_value = entry.public_send(attribute)
+      existing_product_value == convert_to_trusted_type(entry_value, existing_product_value)
+    end
+
+    def ignore_when_updating_product?(attribute)
+      SKIP_VALIDATE_ON_UPDATE.include? attribute
+    end
+
+    def convert_to_trusted_type(untrusted_attribute, trusted_attribute)
+      case trusted_attribute
+      when Integer
+        untrusted_attribute.to_i
+      when Float
+        untrusted_attribute.to_f
+      else
+        untrusted_attribute.to_s
+      end
     end
 
     def attributes_blank?(attribute, existing_product, entry)
@@ -307,6 +370,11 @@ module ProductImport
     def mark_as_invalid(entry, options = {})
       entry.errors.add(options[:attribute], options[:error]) if options[:attribute] && options[:error]
       entry.product_validations = options[:product_validations] if options[:product_validations]
+    end
+
+    def mark_as_not_updatable(entry, attribute)
+      mark_as_invalid(entry, attribute: attribute,
+                             error: I18n.t("admin.product_import.model.not_updatable"))
     end
 
     def import_into_inventory?
@@ -355,7 +423,6 @@ module ProductImport
       return if entry.on_hand.present?
 
       object.on_hand = 0 if object.respond_to?(:on_hand)
-      object.count_on_hand = 0 if object.respond_to?(:count_on_hand)
       entry.on_hand_nil = true
     end
 
@@ -363,6 +430,20 @@ module ProductImport
       object.count_on_hand = entry.on_hand.presence
       object.on_demand = object.count_on_hand.blank? if entry.on_demand.blank?
       entry.on_hand_nil = object.count_on_hand.blank?
+    end
+
+    def all_entries_for_product(entry)
+      all_entries_by_product[entries_by_product_key(entry)]
+    end
+
+    def all_entries_by_product
+      @all_entries_by_product ||= @all_entries.group_by do |entry|
+        entries_by_product_key(entry)
+      end
+    end
+
+    def entries_by_product_key(entry)
+      [entry.producer.to_s, entry.name.to_s]
     end
   end
 end

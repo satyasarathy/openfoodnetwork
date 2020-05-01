@@ -1,4 +1,6 @@
 require 'open_food_network/referer_parser'
+require 'open_food_network/permissions'
+require 'open_food_network/order_cycle_permissions'
 
 module Admin
   class EnterprisesController < ResourceController
@@ -6,11 +8,11 @@ module Admin
     prepend_before_filter :override_owner, only: :create
     prepend_before_filter :override_sells, only: :create
 
-    before_filter :load_enterprise_set, :only => :index
-    before_filter :load_countries, :except => [:index, :register, :check_permalink]
-    before_filter :load_methods_and_fees, :only => [:edit, :update]
-    before_filter :load_groups, :only => [:new, :edit, :update, :create]
-    before_filter :load_taxons, :only => [:new, :edit, :update, :create]
+    before_filter :load_enterprise_set, only: :index
+    before_filter :load_countries, except: [:index, :register, :check_permalink]
+    before_filter :load_methods_and_fees, only: [:edit, :update]
+    before_filter :load_groups, only: [:new, :edit, :update, :create]
+    before_filter :load_taxons, only: [:new, :edit, :update, :create]
     before_filter :check_can_change_sells, only: :update
     before_filter :check_can_change_bulk_sells, only: :bulk_update
     before_filter :check_can_change_owner, only: :update
@@ -21,7 +23,6 @@ module Admin
     before_filter :setup_property, only: [:edit]
 
     helper 'spree/products'
-    include ActionView::Helpers::TextHelper
     include OrderCyclesHelper
 
     def index
@@ -29,6 +30,12 @@ module Admin
         format.html
         format.json { render_as_json @collection, ams_prefix: params[:ams_prefix], spree_current_user: spree_current_user }
       end
+    end
+
+    def edit
+      @object = Enterprise.where(permalink: params[:id]).
+        includes(users: [:ship_address, :bill_address]).first
+      super
     end
 
     def welcome
@@ -45,7 +52,7 @@ module Admin
         flash[:success] = flash_message_for(@object, :successfully_updated)
         respond_with(@object) do |format|
           format.html { redirect_to location_after_save }
-          format.js   { render :layout => false }
+          format.js   { render layout: false }
           format.json { render_as_json @object, ams_prefix: 'index', spree_current_user: spree_current_user }
         end
       else
@@ -64,13 +71,9 @@ module Admin
 
       attributes = { sells: params[:sells], visible: true }
 
-      if ['own', 'any'].include? params[:sells]
-        attributes[:shop_trial_start_date] = @enterprise.shop_trial_start_date || Time.zone.now
-      end
-
       if @enterprise.update_attributes(attributes)
         flash[:success] = I18n.t(:enterprise_register_success_notice, enterprise: @enterprise.name)
-        redirect_to admin_path
+        redirect_to admin_dashboard_path
       else
         flash[:error] = I18n.t(:enterprise_register_error, enterprise: @enterprise.name)
         render :welcome, layout: "spree/layouts/bare_admin"
@@ -79,19 +82,12 @@ module Admin
 
     def bulk_update
       @enterprise_set = EnterpriseSet.new(collection, params[:enterprise_set])
-      touched_enterprises = @enterprise_set.collection.select(&:changed?)
       if @enterprise_set.save
         flash[:success] = I18n.t(:enterprise_bulk_update_success_notice)
 
-        # 18-3-2015: It seems that the form for this action sometimes loads bogus values for
-        # the 'sells' field, and submitting that form results in a bunch of enterprises with
-        # values that have mysteriously changed. This statement is here to help debug that
-        # issue, and should be removed (along with its display in index.html.haml) when the
-        # issue has been resolved.
-        flash[:action] = "#{I18n.t(:updated)} #{pluralize(touched_enterprises.count, 'enterprise')}: #{touched_enterprises.map(&:name).join(', ')}"
-
         redirect_to main_app.admin_enterprises_path
       else
+        touched_enterprises = @enterprise_set.collection.select(&:changed?)
         @enterprise_set.collection.select! { |e| touched_enterprises.include? e }
         flash[:error] = I18n.t(:enterprise_bulk_update_error)
         render :index
@@ -146,7 +142,16 @@ module Admin
         @order_cycle = OrderCycle.find_by_id(params[:order_cycle_id]) if params[:order_cycle_id]
         coordinator = Enterprise.find_by_id(params[:coordinator_id]) if params[:coordinator_id]
         @order_cycle = OrderCycle.new(coordinator: coordinator) if @order_cycle.nil? && coordinator.present?
-        return OpenFoodNetwork::OrderCyclePermissions.new(spree_current_user, @order_cycle).visible_enterprises
+
+        enterprises = OpenFoodNetwork::OrderCyclePermissions.new(spree_current_user, @order_cycle)
+          .visible_enterprises
+
+        unless enterprises.empty?
+          enterprises.includes(
+            supplied_products:
+              [:supplier, master: [:images], variants: { option_values: :option_type }]
+          )
+        end
       when :index
         if spree_current_user.admin?
           OpenFoodNetwork::Permissions.new(spree_current_user).
@@ -158,7 +163,8 @@ module Admin
           Enterprise.where("1=0")
         end
       when :visible
-        OpenFoodNetwork::Permissions.new(spree_current_user).visible_enterprises.ransack(params[:q]).result
+        OpenFoodNetwork::Permissions.new(spree_current_user).visible_enterprises
+          .includes(:shipping_methods, :payment_methods).ransack(params[:q]).result
       else
         # TODO was ordered with is_distributor DESC as well, not sure why or how we want to sort this now
         OpenFoodNetwork::Permissions.new(spree_current_user).
@@ -172,9 +178,22 @@ module Admin
     end
 
     def load_methods_and_fees
-      @payment_methods = Spree::PaymentMethod.managed_by(spree_current_user).sort_by!{ |pm| [(@enterprise.payment_methods.include? pm) ? 0 : 1, pm.name] }
-      @shipping_methods = Spree::ShippingMethod.managed_by(spree_current_user).sort_by!{ |sm| [(@enterprise.shipping_methods.include? sm) ? 0 : 1, sm.name] }
-      @enterprise_fees = EnterpriseFee.managed_by(spree_current_user).for_enterprise(@enterprise).order(:fee_type, :name).all
+      enterprise_payment_methods = @enterprise.payment_methods.to_a
+      enterprise_shipping_methods = @enterprise.shipping_methods.to_a
+      # rubocop:disable Style/TernaryParentheses
+      @payment_methods = Spree::PaymentMethod.managed_by(spree_current_user).sort_by! do |pm|
+        [(enterprise_payment_methods.include? pm) ? 0 : 1, pm.name]
+      end
+      @shipping_methods = Spree::ShippingMethod.managed_by(spree_current_user).sort_by! do |sm|
+        [(enterprise_shipping_methods.include? sm) ? 0 : 1, sm.name]
+      end
+      # rubocop:enable Style/TernaryParentheses
+
+      @enterprise_fees = EnterpriseFee
+        .managed_by(spree_current_user)
+        .for_enterprise(@enterprise)
+        .order(:fee_type, :name)
+        .all
     end
 
     def load_groups
@@ -191,8 +210,8 @@ module Admin
       # methods that are specific to each class do not become available until after the
       # record is persisted. This problem is compounded by the use of calculators.
       @object.transaction do
-        tag_rules_attributes.select{ |i, attrs| attrs[:type].present? }.each do |i, attrs|
-          rule = @object.tag_rules.find_by_id(attrs.delete :id) || attrs[:type].constantize.new(enterprise:  @object)
+        tag_rules_attributes.select{ |_i, attrs| attrs[:type].present? }.each do |_i, attrs|
+          rule = @object.tag_rules.find_by_id(attrs.delete(:id)) || attrs[:type].constantize.new(enterprise: @object)
           create_calculator_for(rule, attrs) if rule.type == "TagRule::DiscountOrder" && rule.calculator.nil?
           rule.update_attributes(attrs)
         end
@@ -208,13 +227,13 @@ module Admin
     def create_calculator_for(rule, attrs)
       if attrs[:calculator_type].present? && attrs[:calculator_attributes].present?
         rule.update_attributes(calculator_type: attrs[:calculator_type])
-        attrs[:calculator_attributes].merge!( { id: rule.calculator.id } )
+        attrs[:calculator_attributes].merge!( id: rule.calculator.id )
       end
     end
 
     def check_can_change_bulk_sells
       unless spree_current_user.admin?
-        params[:enterprise_set][:collection_attributes].each do |i, enterprise_params|
+        params[:enterprise_set][:collection_attributes].each do |_i, enterprise_params|
           enterprise_params.delete :sells unless spree_current_user == Enterprise.find_by_id(enterprise_params[:id]).owner
         end
       end
@@ -234,7 +253,7 @@ module Admin
       unless spree_current_user.admin?
         has_hub = spree_current_user.owned_enterprises.is_hub.any?
         new_enterprise_is_producer = Enterprise.new(params[:enterprise]).is_primary_producer
-        params[:enterprise][:sells] = (has_hub && !new_enterprise_is_producer) ? 'any' : 'none'
+        params[:enterprise][:sells] = has_hub && !new_enterprise_is_producer ? 'any' : 'none'
       end
     end
 
@@ -246,7 +265,7 @@ module Admin
 
     def check_can_change_bulk_owner
       unless spree_current_user.admin?
-        params[:enterprise_set][:collection_attributes].each do |i, enterprise_params|
+        params[:enterprise_set][:collection_attributes].each do |_i, enterprise_params|
           enterprise_params.delete :owner_id
         end
       end
@@ -277,8 +296,10 @@ module Admin
 
     # Overriding method on Spree's resource controller
     def location_after_save
-      referer_path = OpenFoodNetwork::RefererParser::path(request.referer)
+      referer_path = OpenFoodNetwork::RefererParser.path(request.referer)
+      # rubocop:disable Style/RegexpLiteral
       refered_from_producer_properties = referer_path =~ /\/producer_properties$/
+      # rubocop:enable Style/RegexpLiteral
 
       if refered_from_producer_properties
         main_app.admin_enterprise_producer_properties_path(@enterprise)

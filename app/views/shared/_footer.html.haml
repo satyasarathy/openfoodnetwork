@@ -8,38 +8,6 @@
       .small-12.medium-8.medium-offset-2.columns.text-center
         .alert-box
           = render 'shared/register_call'
-    .row
-      .small-12.medium-4.medium-offset-2.columns.text-center
-        %h6
-          = t '.footer_global_headline'
-        %p
-          %a{href: "http://www.openfoodnetwork.org", target: "_blank"}
-            = t '.footer_global_home'
-          %span &#124;
-          %a{href: "http://www.openfoodnetwork.org/news/", target: "_blank"}
-            = t '.footer_global_news'
-          %span &#124;
-          %a{href: "http://www.openfoodnetwork.org/about/history-team/", target: "_blank"}
-            = t '.footer_global_about'
-          %span &#124;
-          %a{href: "http://www.openfoodnetwork.org/contact/", target: "_blank"}
-            = t '.footer_global_contact'
-
-      .small-12.medium-4.columns.text-center
-        %h6
-          = t '.footer_sites_headline'
-        %p
-          %a{href: "http://dev.openfoodnetwork.org", target: "_blank"}
-            = t '.footer_sites_developer'
-          %span &#124;
-          %a{href: "http://community.openfoodnetwork.org", target: "_blank"}
-            = t '.footer_sites_community'
-          %span &#124;
-          %a{href: "http://www.openfoodnetwork.org/platform/user-guide/", target: "_blank"}
-            = t '.footer_sites_userguide'
-
-      .medium-2.columns.text-center
-        / Placeholder
 
   .footer-local
     .row
@@ -126,7 +94,7 @@
 
     .row
       .small-12.medium-3.medium-offset-2.columns.text-left
-        %a{href: root_path}
+        %a{href: main_app.root_path}
           %img{src: ContentConfig.footer_logo.url, width: "220"}
       .small-12.medium-5.columns.text-left
         %p.text-small
@@ -146,13 +114,3 @@
               = t '.footer_data_text_without_privacy_policy_html', {cookies_policy: cookies_policy_link.html_safe }
       .medium-2.columns.text-center
         / Placeholder
-    -if ENV['SKYLIGHT_PUBLIC_DASHBOARD_URL'].present?
-      .row
-        .small-12.medium-8.medium-offset-2.columns.text-center
-          %hr.hr-light
-          %br
-
-      .row
-        .small-12.medium-8.medium-offset-2.columns.text-center
-          .text.small
-            = t '.footer_skylight_dashboard_html', {dashboard: link_to('Skylight', ENV['SKYLIGHT_PUBLIC_DASHBOARD_URL'], target: "_blank")}

@@ -13,7 +13,7 @@
       %th.hide=t('admin.variant_overrides.index.hide')
   %tbody{ ng: { repeat: 'product in filteredProducts | limitTo:productLimit' } }
     %tr{ id: "v_{{variant.id}}", ng: { repeat: 'variant in product.variants | inventoryVariants:hub_id:views' } }
-      %td.producer{ ng: { bind: '::producersByID[product.producer_id].name'} }
+      %td.producer{ ng: { bind: { html: '::producersByID[product.producer_id].name'} } }
       %td.product{ ng: { bind: '::product.name'} }
       %td.variant
         %span{ ng: { bind: '::variant.display_name || ""'} }
@@ -22,5 +22,5 @@
         %button.fullwidth.icon-plus{ ng: { click: "setVisibility(hub_id,variant.id,true)" } }
           = t('admin.variant_overrides.index.add')
       %td.hide
-        %button.fullwidth.hide.icon-remove{ ng: { click: "setVisibility(hub_id,variant.id,false)" } }
+        %button.fullwidth.icon-remove{ ng: { click: "setVisibility(hub_id,variant.id,false)" } }
           = t('admin.variant_overrides.index.hide')

@@ -1,11 +1,11 @@
 class Api::VariantSerializer < ActiveModel::Serializer
-  attributes :id, :is_master, :count_on_hand, :name_to_display, :unit_to_display, :unit_value
-  attributes :options_text, :on_demand, :price, :fees, :price_with_fees, :product_name
-  attributes :tag_list
+  attributes :id, :is_master, :product_name, :sku,
+             :options_text, :unit_value, :unit_description, :unit_to_display,
+             :display_as, :display_name, :name_to_display,
+             :price, :on_demand, :on_hand, :fees, :price_with_fees,
+             :tag_list
 
-  def price
-    object.price
-  end
+  delegate :price, to: :object
 
   def fees
     options[:enterprise_fee_calculator].andand.indexed_fees_by_type_for(object) ||
@@ -27,6 +27,7 @@ class Api::VariantSerializer < ActiveModel::Serializer
   # Used for showing/hiding variants in shopfront based on tag rules
   def tag_list
     return [] unless object.respond_to?(:tag_list)
+
     object.tag_list
   end
 end

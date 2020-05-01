@@ -7,8 +7,11 @@
 
 = render partial: 'spree/admin/shared/order_sub_menu'
 
-- content_for :app_wrapper_attrs do
-  = "ng-app='admin.orders' ng-controller='ordersCtrl'"
+- content_for :main_ng_app_name do
+  = "admin.orders"
+
+- content_for :main_ng_ctrl_name do
+  = "ordersCtrl"
 
 - content_for :table_filter_title do
   = t(:search)
@@ -19,8 +22,9 @@
 .row.index-controls{'ng-show' => '!RequestMonitor.loading && orders.length > 0'}
   = render partial: 'per_page_controls'
 
-  %button.invoices-modal{'ng-controller' => 'bulkInvoiceCtrl', 'ng-click' => 'createBulkInvoice()', 'ng-disabled' => 'selected_orders.length == 0'}
-    = t('.print_invoices')
+  - if Spree::Config[:enable_invoices?]
+    %button.invoices-modal{'ng-controller' => 'bulkInvoiceCtrl', 'ng-click' => 'createBulkInvoice()', 'ng-disabled' => 'selected_orders.length == 0'}
+      = t('.print_invoices')
 
 %table#listing_orders.index.responsive{width: "100%", 'ng-init' => 'initialise()', 'ng-show' => "!RequestMonitor.loading && orders.length > 0" }
   %colgroup
@@ -39,11 +43,11 @@
 
       - ['number', 'state', 'payment_state', 'shipment_state', 'email', 'total'].each do |column_name|
         %th
-          = render partial: 'sortable_header', locals: {column_name: column_name}
+          = render partial: 'spree/admin/shared/sortable_header', locals: {column_name: column_name}
 
       %th.actions
   %tbody
-    %tr{ng: {repeat: 'order in orders track by $index', class: {even: "'even'", odd: "'odd'"}}, 'ng-class' => "'state-{{order.state}}'"}
+    %tr{ng: {repeat: 'order in orders track by order.id', class: {even: "'even'", odd: "'odd'"}}, 'ng-class' => "{'state-{{order.state}}': true, 'row-loading': rowStatus[order.id] == 'loading'}"}
       %td.align-center
         %input{type: 'checkbox', 'ng-model' => 'checkboxes[order.id]', 'ng-change' => 'toggleSelection(order.id)'}
       %td.align-center
@@ -51,7 +55,7 @@
       %td.align-center
         {{order.completed_at}}
       %td
-        %a{'ng-href' => '{{order.show_path}}'}
+        %a{'ng-href' => '{{order.edit_path}}'}
           {{order.number}}
         %div{'ng-if' => 'order.special_instructions'}
           %br
@@ -59,25 +63,30 @@
             = t('.note')
       %td.align-center
         %span.state{'ng-class' => 'order.state'}
-          {{'order_state.' + order.state | t}}
+          {{'js.admin.orders.order_state.' + order.state | t}}
       %td.align-center
         %span.state{'ng-class' => 'order.payment_state', 'ng-if' => 'order.payment_state'}
           %a{'ng-href' => '{{order.payments_path}}' }
-            {{'payment_states.' + order.payment_state | t}}
+            {{'js.admin.orders.payment_states.' + order.payment_state | t}}
       %td.align-center
         %span.state{'ng-class' => 'order.shipment_state', 'ng-if' => 'order.shipment_state'}
-          %a{'ng-href' => '{{order.shipments_path}}' }
-            {{'shipment_states.' + order.shipment_state | t}}
+          {{'js.admin.orders.shipment_states.' + order.shipment_state | t}}
       %td
         = mail_to "{{order.email}}"
+        %br
+        {{order.full_name}}
       %td.align-center
         %span{'ng-bind-html' => 'order.display_total'}
       %td.actions
+        %div.row-loading-icons
+          %img.spinner{src: "/assets/spinning-circles.svg", ng: {show: 'rowStatus[order.id] == "loading"'} }
+          %i.success.icon-ok-sign{ng: {show: 'rowStatus[order.id] == "success"'} }
+          %i.error.icon-remove-sign.with-tip{ng: {show: 'rowStatus[order.id] == "error"'}, 'ofn-with-tip' => t('.order_not_updated')}
         %a.icon_link.with-tip.icon-edit.no-text{'ng-href' => '{{order.edit_path}}', 'data-action' => 'edit', 'ofn-with-tip' => t('.edit')}
         %div{'ng-if' => 'order.ready_to_ship'}
-          %a.icon-road.icon_link.with-tip.no-text{'ng-href' => '{{order.ship_path}}', 'data-action' => 'ship', 'data-confirm' => t(:are_you_sure), 'data-method' => 'put', rel: 'nofollow', 'ofn-with-tip' => t('.ship')}
-        %div{'ng-if' => 'order.payment_capture_path'}
-          %a.icon-capture.icon_link.no-text{'ng-href' => '{{order.payment_capture_path}}', 'data-action' => 'capture', 'data-method' => 'put', rel: 'nofollow', 'ofn-with-tip' => t('.capture')}
+          %button.icon-road.icon_link.with-tip.no-text{'ng-click' => 'shipOrder(order)', rel: 'nofollow', 'ofn-with-tip' => t('.ship')}
+        %div{'ng-if' => 'order.ready_to_capture'}
+          %button.icon-capture.icon_link.no-text{'ng-click' => 'capturePayment(order)', rel: 'nofollow', 'ofn-with-tip' => t('.capture')}
 
 .orders-loading{'ng-show' => 'RequestMonitor.loading'}
   .row

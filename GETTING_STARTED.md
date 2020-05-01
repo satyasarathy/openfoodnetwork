@@ -11,7 +11,7 @@ The following guides are located in the wiki and provide more OS-specific step-b
 ### Dependencies
 
 * Rails 3.2.x
-* Ruby 2.1.5
+* Ruby 2.1.9
 * PostgreSQL database
 * PhantomJS (for testing)
 * See Gemfile for a list of gems required
@@ -75,7 +75,7 @@ Then the main application tests can be run with:
 
 The tests of all custom engines can be run with:
 
-    bundle exec rake openfoodnetwork:specs:engines:rspec
+    bundle exec rake ofn:specs:engines:rspec
 
 Note: If your OS is not explicitly supported in the setup guides then not all tests may pass. However, you may still be able to develop. Get in touch with the [#dev][slack-dev] channel on Slack to troubleshoot issues and determine if they will preclude you from contributing to OFN.
 
@@ -118,7 +118,7 @@ $ createdb open_food_network_test --owner=ofn
 If these commands succeed, you should be able to [continue the setup process](#get-it-running).
 
 [developer-wiki]: https://github.com/openfoodfoundation/openfoodnetwork/wiki
-[sierra]: https://github.com/openfoodfoundation/openfoodnetwork/wiki/Development-Environment-Setup%3A-macOS-%28Sierra%2C-HighSierra-and-Mojave%29
+[sierra]: https://github.com/openfoodfoundation/openfoodnetwork/wiki/Development-Environment-Setup%3A-macOS-%28Sierra%2C-HighSierra%2C-Mojave-and-Catalina%29
 [el-capitan]: https://github.com/openfoodfoundation/openfoodnetwork/wiki/Development-Environment-Setup:-OS-X-(El-Capitan)
 [ubuntu]: https://github.com/openfoodfoundation/openfoodnetwork/wiki/Development-Environment-Setup:-Ubuntu
 [wiki]: https://github.com/openfoodfoundation/openfoodnetwork/wiki

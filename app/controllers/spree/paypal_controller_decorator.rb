@@ -4,7 +4,7 @@ Spree::PaypalController.class_eval do
   after_filter :reset_order_when_complete, only: :confirm
 
   def cancel
-    flash[:notice] = Spree.t('flash.cancel', :scope => 'paypal')
+    flash[:notice] = Spree.t('flash.cancel', scope: 'paypal')
     redirect_to main_app.checkout_path
   end
 
@@ -38,6 +38,7 @@ Spree::PaypalController.class_eval do
   # the payment details have been confirmed, but before any payments have been processed
   def destroy_orphaned_paypal_payments
     return unless payment_method.is_a?(Spree::Gateway::PayPalExpress)
+
     orphaned_payments = current_order.payments.where(payment_method_id: payment_method.id, source_id: nil)
     orphaned_payments.each(&:destroy)
   end

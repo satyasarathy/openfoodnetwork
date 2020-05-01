@@ -9,106 +9,159 @@ module OpenFoodNetwork
     end
 
     # List of any enterprises whose exchanges I should be able to see in order_cycle
-    # NOTE: the enterprises a given user can see actually in the OC interface depend on the relationships
-    # of their enterprises to the coordinator of the order cycle, rather than on the order cycle itself
+    # NOTE: the enterprises a given user can see actually in the OC interface depend on the
+    # relationships of their enterprises to the coordinator of the OC, rather than on the OC itself
     def visible_enterprises
-      return Enterprise.where("1=0") unless @coordinator.present?
-      if managed_enterprises.include? @coordinator
-        coordinator_permitted = [@coordinator]
-        all_active = []
+      return Enterprise.where("1=0") if @coordinator.blank?
+
+      if managed_enterprise_ids.include? @coordinator.id
+        coordinator_permitted_ids = [@coordinator]
+        all_active_ids = []
 
         if @coordinator.sells == "any"
           # If the coordinator sells any, relationships come into play
-          related_enterprises_granting(:add_to_order_cycle, to: [@coordinator]).pluck(:id).each do |enterprise_id|
-            coordinator_permitted << enterprise_id
+          related_enterprises_granting(:add_to_order_cycle,
+                                       to: [@coordinator.id]).each do |enterprise_id|
+            coordinator_permitted_ids << enterprise_id
           end
 
-          # As a safety net, we should load all of the enterprises invloved in existing exchanges in this order cycle
-          all_active = @order_cycle.suppliers.pluck(:id) | @order_cycle.distributors.pluck(:id)
+          # As a safety net, we load all the enterprises involved in existing exchanges in this OC
+          all_active_ids = @order_cycle.suppliers.pluck(:id) | @order_cycle.distributors.pluck(:id)
         end
 
-        Enterprise.where(id: coordinator_permitted | all_active)
+        Enterprise.where(id: coordinator_permitted_ids | all_active_ids)
       else
         # Any enterprises that I manage directly, which have granted P-OC to the coordinator
-        managed_permitted = related_enterprises_granting(:add_to_order_cycle, to: [@coordinator], scope: managed_participating_enterprises ).pluck(:id)
+        managed_permitted_ids = related_enterprises_granting(
+          :add_to_order_cycle,
+          to: [@coordinator.id],
+          scope: managed_participating_enterprises
+        )
 
         # Any hubs in this OC that have been granted P-OC by producers I manage in this OC
-        hubs_permitted = related_enterprises_granted(:add_to_order_cycle, by: managed_participating_producers, scope: @order_cycle.distributors).pluck(:id)
+        hubs_permitted_ids = related_enterprises_granted(
+          :add_to_order_cycle,
+          by: managed_participating_producers.select("enterprises.id"),
+          scope: @order_cycle.distributors
+        )
 
         # Any hubs in this OC that have granted P-OC to producers I manage in this OC
-        hubs_permitting = related_enterprises_granting(:add_to_order_cycle, to: managed_participating_producers, scope: @order_cycle.distributors).pluck(:id)
+        hubs_permitting_ids = related_enterprises_granting(
+          :add_to_order_cycle,
+          to: managed_participating_producers.select("enterprises.id"),
+          scope: @order_cycle.distributors
+        )
 
         # Any producers in this OC that have been granted P-OC by hubs I manage in this OC
-        producers_permitted = related_enterprises_granted(:add_to_order_cycle, by: managed_participating_hubs, scope: @order_cycle.suppliers).pluck(:id)
+        producers_permitted_ids = related_enterprises_granted(
+          :add_to_order_cycle,
+          by: managed_participating_hubs.select("enterprises.id"),
+          scope: @order_cycle.suppliers
+        )
 
         # Any producers in this OC that have granted P-OC to hubs I manage in this OC
-        producers_permitting = related_enterprises_granting(:add_to_order_cycle, to: managed_participating_hubs, scope: @order_cycle.suppliers).pluck(:id)
+        producers_permitting_ids = related_enterprises_granting(
+          :add_to_order_cycle,
+          to: managed_participating_hubs.select("enterprises.id"),
+          scope: @order_cycle.suppliers
+        )
 
-        managed_active = []
-        hubs_active = []
-        producers_active = []
+        managed_active_ids = []
+        hubs_active_ids = []
+        producers_active_ids = []
         if @order_cycle
           # TODO: Remove this when all P-OC are sorted out
           # Any enterprises that I manage that are already in the order_cycle
-          managed_active = managed_participating_enterprises.pluck(:id)
+          managed_active_ids = managed_participating_enterprises.pluck(:id)
 
           # TODO: Remove this when all P-OC are sorted out
-          # Any hubs that currently have outgoing exchanges distributing variants of producers I manage
-          variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', managed_enterprises.is_primary_producer)
-          active_exchanges = @order_cycle.exchanges.outgoing.with_any_variant(variants)
-          hubs_active = active_exchanges.map(&:receiver_id)
+          # Hubs that currently have outgoing exchanges distributing variants of producers I manage
+          variants = variants_from_suppliers(managed_producer_ids)
+
+          active_exchanges = @order_cycle.
+            exchanges.outgoing.with_any_variant(variants.select("spree_variants.id"))
+
+          hubs_active_ids = active_exchanges.map(&:receiver_id)
 
           # TODO: Remove this when all P-OC are sorted out
           # Any producers of variants that hubs I manage are currently distributing in this OC
-          variants = Spree::Variant.joins(:exchanges).where("exchanges.receiver_id IN (?) AND exchanges.order_cycle_id = (?) AND exchanges.incoming = 'f'", managed_participating_hubs, @order_cycle).pluck(:id).uniq
-          products = Spree::Product.joins(:variants_including_master).where("spree_variants.id IN (?)", variants).pluck(:id).uniq
-          producers_active = Enterprise.joins(:supplied_products).where("spree_products.id IN (?)", products).pluck(:id).uniq
+          variant_ids = Spree::Variant.joins(:exchanges).
+            where(
+              "exchanges.receiver_id IN (?)
+                AND exchanges.order_cycle_id = (?)
+                AND exchanges.incoming = 'f'",
+              managed_participating_hubs.select("enterprises.id"),
+              @order_cycle
+            ).pluck(:id).uniq
+
+          product_ids = Spree::Product.joins(:variants_including_master).
+            where("spree_variants.id IN (?)", variant_ids).pluck(:id).uniq
+
+          producers_active_ids = Enterprise.joins(:supplied_products).
+            where("spree_products.id IN (?)", product_ids).pluck(:id).uniq
         end
 
-        ids = managed_permitted | hubs_permitted | hubs_permitting | producers_permitted | producers_permitting | managed_active | hubs_active | producers_active
+        ids = managed_permitted_ids | hubs_permitted_ids | hubs_permitting_ids \
+          | producers_permitted_ids | producers_permitting_ids | managed_active_ids \
+          | hubs_active_ids | producers_active_ids
 
-        Enterprise.where(id: ids.sort )
+        Enterprise.where(id: ids)
       end
     end
 
     # Find the exchanges of an order cycle that an admin can manage
     def visible_exchanges
       ids = order_cycle_exchange_ids_involving_my_enterprises |
-        order_cycle_exchange_ids_distributing_my_variants |
-        order_cycle_exchange_ids_with_distributable_variants
+            order_cycle_exchange_ids_distributing_my_variants |
+            order_cycle_exchange_ids_with_distributable_variants
 
       Exchange.where(id: ids, order_cycle_id: @order_cycle)
     end
 
     # Find the variants that a user can POTENTIALLY see within incoming exchanges
     def visible_variants_for_incoming_exchanges_from(producer)
-      return Spree::Variant.where("1=0") unless @order_cycle
-
-      if user_manages_coordinator_or(producer)
-        # All variants belonging to the producer
-        Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', producer)
+      if @order_cycle &&
+         (user_manages_coordinator_or(producer) || user_is_permitted_add_to_oc_by(producer))
+        all_variants_supplied_by(producer)
       else
-        # All variants of the producer if it has granted P-OC to any of my managed hubs that are in this order cycle
-        permitted = EnterpriseRelationship.permitting(managed_participating_hubs).
-          permitted_by(producer).with_permission(:add_to_order_cycle).present?
-        if permitted
-          Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', producer)
-        else
-          Spree::Variant.where("1=0")
-        end
+        no_variants
       end
+    end
+
+    # Producer has granted P-OC to any of my managed hubs that are in this OC
+    def user_is_permitted_add_to_oc_by(producer)
+      EnterpriseRelationship.
+        permitting(managed_participating_hubs.select("enterprises.id")).
+        permitted_by(producer.id).
+        with_permission(:add_to_order_cycle).
+        present?
     end
 
     # Find the variants that a user can edit within incoming exchanges
     def editable_variants_for_incoming_exchanges_from(producer)
-      return Spree::Variant.where("1=0") unless @order_cycle
-
-      if user_manages_coordinator_or(producer)
-        # All variants belonging to the producer
-        Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', producer)
+      if @order_cycle && user_manages_coordinator_or(producer)
+        all_variants_supplied_by(producer)
       else
-        Spree::Variant.where("1=0")
+        no_variants
       end
+    end
+
+    def all_variants_supplied_by(producer)
+      Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', producer)
+    end
+
+    def no_variants
+      Spree::Variant.where("1=0")
+    end
+
+    def all_incoming_editable_variants
+      valid_suppliers = visible_enterprises.select do |enterprise|
+        user_manages_coordinator_or(enterprise)
+      end.map(&:id)
+
+      Spree::Variant.includes(product: :supplier).
+        select("spree_variants.id, spree_products.supplier_id").
+        joins(:product).where(spree_products: { supplier_id: valid_suppliers })
     end
 
     # Find the variants that a user is permitted see within outgoing exchanges
@@ -118,38 +171,23 @@ module OpenFoodNetwork
       return Spree::Variant.where("1=0") unless @order_cycle
 
       if user_manages_coordinator_or(hub)
-        # TODO: Use variants_stockable_by(hub) for this?
-
-        # Any variants produced by the coordinator, for outgoing exchanges with itself
-        # TODO: isn't this completely redundant given the assignment of hub_variants below?
-        coordinator_variants = []
-        if hub == @coordinator
-          coordinator_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', @coordinator)
-        end
-
-        # Any variants of any producers that have granted the hub P-OC
-        producers = related_enterprises_granting(:add_to_order_cycle, to: [hub], scope: Enterprise.is_primary_producer)
-        permitted_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', producers)
-
-        hub_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', hub)
-
-        # PLUS any variants that are already in an outgoing exchange of this hub, so things don't break
-        # TODO: Remove this when all P-OC are sorted out
-        active_variants = []
-        @order_cycle.exchanges.outgoing.where(receiver_id: hub).limit(1).each do |exchange|
-          active_variants = exchange.variants
-        end
-
-        Spree::Variant.where(id: coordinator_variants | hub_variants | permitted_variants | active_variants)
+        visible_and_editable_variants(hub)
       else
-        # Any variants produced by MY PRODUCERS that are in this order cycle, where my producer has granted P-OC to the hub
-        producers = related_enterprises_granting(:add_to_order_cycle, to: [hub], scope: managed_participating_producers)
-        permitted_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', producers)
+        # Variants produced by MY PRODUCERS that are in this OC,
+        #   where my producer has granted P-OC to the hub
+        producer_ids = related_enterprises_granting(:add_to_order_cycle,
+                                                    to: [hub.id],
+                                                    scope: managed_participating_producers)
+        permitted_variants = variants_from_suppliers(producer_ids)
 
-        # PLUS any of my incoming producers' variants that are already in an outgoing exchange of this hub, so things don't break
-        # TODO: Remove this when all P-OC are sorted out
+        # PLUS my incoming producers' variants that are already in an outgoing exchange of this hub,
+        #   so things don't break. TODO: Remove this when all P-OC are sorted out
         active_variants = Spree::Variant.joins(:exchanges, :product).
-          where("exchanges.receiver_id = (?) AND spree_products.supplier_id IN (?) AND incoming = 'f'", hub, managed_enterprises.is_primary_producer)
+          where("exchanges.receiver_id = (?)
+                  AND spree_products.supplier_id IN (?)
+                  AND incoming = 'f'",
+                hub.id,
+                managed_producer_ids)
 
         Spree::Variant.where(id: permitted_variants | active_variants)
       end
@@ -160,99 +198,139 @@ module OpenFoodNetwork
       return Spree::Variant.where("1=0") unless @order_cycle
 
       if user_manages_coordinator_or(hub)
-        # Any variants produced by the coordinator, for outgoing exchanges with itself
-        coordinator_variants = []
-        if hub == @coordinator
-          coordinator_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', @coordinator)
-        end
-
-        # Any variants of any producers that have granted the hub P-OC
-        producers = related_enterprises_granting(:add_to_order_cycle, to: [hub], scope: Enterprise.is_primary_producer)
-        permitted_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', producers)
-
-        hub_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id = (?)', hub)
-
-        # PLUS any variants that are already in an outgoing exchange of this hub, so things don't break
-        # TODO: Remove this when all P-OC are sorted out
-        active_variants = []
-        @order_cycle.exchanges.outgoing.where(receiver_id: hub).limit(1).each do |exchange|
-          active_variants = exchange.variants
-        end
-
-        Spree::Variant.where(id: coordinator_variants | hub_variants | permitted_variants | active_variants)
+        visible_and_editable_variants(hub)
       else
         # Any of my managed producers in this order cycle granted P-OC by the hub
-        granted_producers = related_enterprises_granted(:add_to_order_cycle, by: [hub], scope: managed_participating_producers)
+        granted_producers = related_enterprises_granted(:add_to_order_cycle,
+                                                        by: [hub.id],
+                                                        scope: managed_participating_producers)
 
-        # Any variants produced by MY PRODUCERS that are in this order cycle, where my producer has granted P-OC to the hub
-        granting_producers = related_enterprises_granting(:add_to_order_cycle, to: [hub], scope: granted_producers)
-        permitted_variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', granting_producers)
+        # Variants produced by MY PRODUCERS that are in this OC,
+        #   where my producer has granted P-OC to the hub
+        granting_producer_ids = related_enterprises_granting(:add_to_order_cycle,
+                                                             to: [hub.id],
+                                                             scope: granted_producers)
+        permitted_variants = variants_from_suppliers(granting_producer_ids)
 
         Spree::Variant.where(id: permitted_variants)
       end
     end
 
-
     private
 
+    def visible_and_editable_variants(hub)
+      # Producers that have granted the hub P-OC
+      producer_ids = related_enterprises_granting(:add_to_order_cycle,
+                                                  to: [hub.id],
+                                                  scope: Enterprise.is_primary_producer)
+
+      # Variants from Producers via permissions, and from the hub itself
+      available_variants = variants_from_suppliers(producer_ids.push(hub.id))
+
+      # PLUS variants that are already in an outgoing exchange of this hub, so things don't break
+      active_variants = active_outgoing_variants(hub)
+
+      Spree::Variant.where(id: available_variants | active_variants)
+    end
+
+    def variants_from_suppliers(supplier_ids)
+      Spree::Variant.joins(:product).where(spree_products: { supplier_id: supplier_ids })
+    end
+
+    def active_outgoing_variants(hub)
+      @active_outgoing_variants ||= begin
+        @order_cycle.exchanges.outgoing.where(receiver_id: hub).first.andand.variants || []
+      end
+    end
+
     def user_manages_coordinator_or(enterprise)
-      managed_enterprises.pluck(:id).include?(@coordinator.id) || managed_enterprises.pluck(:id).include?(enterprise.id)
+      managed_enterprise_ids.include?(@coordinator.id) ||
+        managed_enterprise_ids.include?(enterprise.id)
+    end
+
+    def managed_enterprise_ids
+      @managed_enterprise_ids ||= managed_enterprises.pluck(:id)
+    end
+
+    def managed_producer_ids
+      @managed_producer_ids ||= managed_enterprises.is_primary_producer.pluck(:id)
     end
 
     def managed_participating_enterprises
       return @managed_participating_enterprises unless @managed_participating_enterprises.nil?
-      @managed_participating_enterprises = managed_enterprises.where(id: @order_cycle.suppliers | @order_cycle.distributors)
+
+      @managed_participating_enterprises = managed_enterprises.
+        where(id: @order_cycle.suppliers | @order_cycle.distributors)
     end
 
     def managed_participating_hubs
       return @managed_participating_hubs unless @managed_participating_hubs.nil?
+
       @managed_participating_hubs = managed_participating_enterprises.is_hub
     end
 
     def managed_participating_producers
       return @managed_participating_producers unless @managed_participating_producers.nil?
+
       @managed_participating_producers = managed_participating_enterprises.is_primary_producer
     end
 
     def order_cycle_exchange_ids_involving_my_enterprises
       # Any exchanges that my managed enterprises are involved in directly
-      @order_cycle.exchanges.involving(managed_enterprises).pluck :id
+      @order_cycle.exchanges.involving(managed_enterprise_ids).pluck :id
     end
 
     def order_cycle_exchange_ids_with_distributable_variants
       # Find my managed hubs in this order cycle
       hubs = managed_participating_hubs
       # Any incoming exchange where the producer has granted P-OC to one or more of those hubs
-      producers = related_enterprises_granting(:add_to_order_cycle, to: hubs, scope: Enterprise.is_primary_producer).pluck :id
-      permitted_exchanges = @order_cycle.exchanges.incoming.where(sender_id: producers).pluck :id
+      producer_ids = related_enterprises_granting(:add_to_order_cycle,
+                                                  to: hubs.select("enterprises.id"),
+                                                  scope: Enterprise.is_primary_producer)
+      permitted_exchange_ids = @order_cycle.
+        exchanges.incoming.where(sender_id: producer_ids).pluck :id
 
       # TODO: remove active_exchanges when we think it is safe to do so
       # active_exchanges is for backward compatability, before we restricted variants in each
       # outgoing exchange to those where the producer had granted P-OC to the distributor
-      # For any of my managed hubs in this OC, any incoming exchanges supplying variants in my outgoing exchanges
-      variants = Spree::Variant.joins(:exchanges).where("exchanges.receiver_id IN (?) AND exchanges.order_cycle_id = (?) AND exchanges.incoming = 'f'", hubs, @order_cycle).pluck(:id).uniq
-      products = Spree::Product.joins(:variants_including_master).where("spree_variants.id IN (?)", variants).pluck(:id).uniq
-      producers = Enterprise.joins(:supplied_products).where("spree_products.id IN (?)", products).pluck(:id).uniq
-      active_exchanges = @order_cycle.exchanges.incoming.where(sender_id: producers).pluck :id
+      # For any of my managed hubs in this OC,
+      #   any incoming exchanges supplying variants in my outgoing exchanges
+      variant_ids = Spree::Variant.joins(:exchanges).
+        where("exchanges.receiver_id IN (?)
+                AND exchanges.order_cycle_id = (?)
+                AND exchanges.incoming = 'f'",
+              hubs.select("enterprises.id"),
+              @order_cycle).pluck(:id).uniq
 
-      permitted_exchanges | active_exchanges
+      product_ids = Spree::Product.joins(:variants_including_master).
+        where(spree_variants: { id: variant_ids }).pluck(:id).uniq
+
+      producer_ids = Enterprise.joins(:supplied_products).
+        where(spree_products: { id: product_ids }).pluck(:id).uniq
+
+      active_exchange_ids = @order_cycle.exchanges.incoming.where(sender_id: producer_ids).pluck :id
+
+      permitted_exchange_ids | active_exchange_ids
     end
 
     def order_cycle_exchange_ids_distributing_my_variants
       # Find my producers in this order cycle
-      producers = managed_participating_producers.pluck :id
-      # Any outgoing exchange where the distributor has been granted P-OC by one or more of those producers
-      hubs = related_enterprises_granted(:add_to_order_cycle, by: producers, scope: Enterprise.is_hub)
-      permitted_exchanges = @order_cycle.exchanges.outgoing.where(receiver_id: hubs).pluck :id
+      producer_ids = managed_participating_producers.pluck :id
+      # Outgoing exchanges with distributor that has been granted P-OC by 1 or more of the producers
+      hub_ids = related_enterprises_granted(:add_to_order_cycle,
+                                            by: producer_ids,
+                                            scope: Enterprise.is_hub)
+      permitted_exchange_ids = @order_cycle.exchanges.outgoing.where(receiver_id: hub_ids).pluck :id
 
       # TODO: remove active_exchanges when we think it is safe to do so
       # active_exchanges is for backward compatability, before we restricted variants in each
       # outgoing exchange to those where the producer had granted P-OC to the distributor
       # For any of my managed producers, any outgoing exchanges with their variants
-      variants = Spree::Variant.joins(:product).where('spree_products.supplier_id IN (?)', producers)
-      active_exchanges = @order_cycle.exchanges.outgoing.with_any_variant(variants).pluck :id
+      variants = variants_from_suppliers(producer_ids)
+      active_exchange_ids = @order_cycle.
+        exchanges.outgoing.with_any_variant(variants.select("spree_variants.id")).pluck :id
 
-      permitted_exchanges | active_exchanges
+      permitted_exchange_ids | active_exchange_ids
     end
   end
 end

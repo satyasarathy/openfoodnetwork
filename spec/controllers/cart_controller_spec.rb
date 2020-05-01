@@ -51,8 +51,8 @@ describe CartController, type: :controller do
   context "handling variant overrides correctly" do
     let(:product) { create(:simple_product, supplier: producer) }
     let(:producer) { create(:supplier_enterprise) }
-    let!(:variant_in_the_order) { create(:variant, count_on_hand: 4) }
-    let!(:variant_not_in_the_order) { create(:variant, count_on_hand: 2) }
+    let!(:variant_in_the_order) { create(:variant) }
+    let!(:variant_not_in_the_order) { create(:variant) }
 
     let(:hub) { create(:distributor_enterprise, with_payment_and_shipping: true) }
     let!(:variant_override_in_the_order) { create(:variant_override, hub: hub, variant: variant_in_the_order, price: 55.55, count_on_hand: 20, default_stock: nil, resettable: false) }
@@ -63,6 +63,8 @@ describe CartController, type: :controller do
     let!(:line_item) { create(:line_item, order: order, variant: variant_in_the_order, quantity: 2, max_quantity: 3) }
 
     before do
+      variant_in_the_order.on_hand = 4
+      variant_not_in_the_order.on_hand = 2
       order_cycle.exchanges.outgoing.first.variants = [variant_in_the_order, variant_not_in_the_order]
       order.order_cycle = order_cycle
       order.distributor = hub
@@ -90,16 +92,19 @@ describe CartController, type: :controller do
 
   context "adding a group buy product to the cart" do
     it "sets a variant attribute for the max quantity" do
-      distributor_product = create(:distributor_enterprise)
-      p = create(:product, distributors: [distributor_product], group_buy: true)
+      distributor = create(:distributor_enterprise)
+      product = create(:product, group_buy: true)
+      variant = product.variants.first
+      order_cycle = create(:simple_order_cycle, distributors: [distributor], variants: [variant])
 
       order = subject.current_order(true)
-      allow(order).to receive(:distributor) { distributor_product }
-      expect(order).to receive(:set_variant_attributes).with(p.master, max_quantity: '3')
+      allow(order).to receive(:distributor) { distributor }
+      allow(order).to receive(:order_cycle) { order_cycle }
+      expect(order).to receive(:set_variant_attributes).with(variant, max_quantity: '3')
       allow(controller).to receive(:current_order).and_return(order)
 
       expect do
-        spree_post :populate, variants: { p.master.id => 1 }, variant_attributes: { p.master.id => { max_quantity: 3 } }
+        spree_post :populate, variants: { variant.id => 1 }, variant_attributes: { variant.id => { max_quantity: 3 } }
       end.to change(Spree::LineItem, :count).by(1)
     end
   end

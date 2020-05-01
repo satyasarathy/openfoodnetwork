@@ -1,9 +1,9 @@
 require 'spec_helper'
 
-feature %q{
+feature '
     As an administrator
     I want to manage enterprise fees
-}, js: true do
+', js: true do
   include AuthenticationWorkflow
   include WebHelper
 
@@ -18,7 +18,7 @@ feature %q{
     click_link 'Enterprise Fees'
 
     expect(page).to have_select "enterprise_fee_set_collection_attributes_0_enterprise_id"
-    expect(page).to have_select "enterprise_fee_set_collection_attributes_0_fee_type", selected: 'Packing'
+    expect(page).to have_select "enterprise_fee_set_collection_attributes_0_fee_type", selected: 'Packing fee'
     expect(page).to have_selector "input[value='$0.50 / kg']"
     expect(page).to have_select "enterprise_fee_set_collection_attributes_0_tax_category_id", selected: 'GST'
     expect(page).to have_select "enterprise_fee_set_collection_attributes_0_calculator_type", selected: 'Flat Rate (per item)'
@@ -72,7 +72,7 @@ feature %q{
 
     # Then I should see the updated fields for my fee
     expect(page).to have_select "enterprise_fee_set_collection_attributes_0_enterprise_id", selected: 'Foo'
-    expect(page).to have_select "enterprise_fee_set_collection_attributes_0_fee_type", selected: 'Admin'
+    expect(page).to have_select "enterprise_fee_set_collection_attributes_0_fee_type", selected: 'Admin fee'
     expect(page).to have_selector "input[value='Greetings!']"
     expect(page).to have_select 'enterprise_fee_set_collection_attributes_0_tax_category_id', selected: 'Inherit From Product'
     expect(page).to have_selector "option[selected]", text: 'Flat Percent (per item)'
@@ -104,31 +104,6 @@ feature %q{
     # Then my enterprise fee should have been deleted
     visit admin_enterprise_fees_path
     expect(page).to have_no_selector "input[value='#{fee.name}']"
-  end
-
-  scenario "deleting a shipping method referenced by a product distribution" do
-    # Given an enterprise fee referenced by a product distribution
-    fee = create(:enterprise_fee)
-    p = create(:product)
-    d = create(:distributor_enterprise)
-    create(:product_distribution, product: p, distributor: d, enterprise_fee: fee)
-
-    # When I go to the enterprise fees page
-    quick_login_as_admin
-    visit admin_enterprise_fees_path
-
-    # And I click delete
-    accept_alert  do
-      find("a.delete-resource").click
-    end
-
-    # Then I should see an error
-    expect(page).to have_content "That enterprise fee cannot be deleted as it is referenced by a product distribution: #{p.id} - #{p.name}."
-
-    # And my enterprise fee should not have been deleted
-    visit admin_enterprise_fees_path
-    expect(page).to have_selector "input[value='#{fee.name}']"
-    expect(EnterpriseFee.find(fee.id)).not_to be_nil
   end
 
   context "as an enterprise manager" do
@@ -192,8 +167,8 @@ feature %q{
       within(".side_menu") { click_link 'Enterprise Fees' }
       click_link "Manage Enterprise Fees"
       expect(page).to have_select('enterprise_fee_set_collection_attributes_0_enterprise_id',
-                              selected: 'Second Distributor',
-                              options: ['', 'First Distributor', 'Second Distributor'])
+                                  selected: 'Second Distributor',
+                                  options: ['', 'First Distributor', 'Second Distributor'])
     end
   end
 end

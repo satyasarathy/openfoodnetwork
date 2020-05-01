@@ -20,11 +20,41 @@ feature "full-page cart", js: true do
       set_order order
     end
 
+    describe "continue shopping" do
+      it "shows a button leading back to the shop" do
+        # Set up a shopfront message to test that we are not going to the
+        # home tab.
+        distributor.preferred_shopfront_message = "Test driven farming"
+
+        add_product_to_cart order, product_with_fee, quantity: 2
+        visit main_app.cart_path
+
+        expect(page).to have_link "Continue shopping"
+
+        click_link "Continue shopping"
+
+        expect(page).to have_no_link "Continue shopping"
+        expect(page).to have_button "Edit your cart"
+        expect(page).to have_no_content distributor.preferred_shopfront_message
+      end
+    end
+
     describe "product description" do
       it "does not link to the product page" do
         add_product_to_cart order, product_with_fee, quantity: 2
-        visit spree.cart_path
+        visit main_app.cart_path
         expect(page).to have_no_selector '.item-thumb-image a'
+      end
+    end
+
+    describe "when a product is soft-deleted" do
+      it "shows the cart without errors" do
+        add_product_to_cart order, product_with_tax, quantity: 1
+        add_product_to_cart order, product_with_fee, quantity: 2
+        product_with_fee.destroy
+
+        visit main_app.cart_path
+        expect(page).to have_selector '.cart-item-price'
       end
     end
 
@@ -34,7 +64,7 @@ feature "full-page cart", js: true do
       before do
         add_enterprise_fee percentage_fee
         add_product_to_cart order, product_with_fee, quantity: 8
-        visit spree.cart_path
+        visit main_app.cart_path
       end
 
       it "rounds fee calculations correctly" do
@@ -49,13 +79,15 @@ feature "full-page cart", js: true do
 
     describe "admin and handling flat fees" do
       context "when there are fees" do
-        let(:handling_fee) { create(:enterprise_fee, calculator: Spree::Calculator::FlatRate.new(preferred_amount: 1),
-          enterprise: order_cycle.coordinator, fee_type: 'admin') }
+        let(:handling_fee) {
+          create(:enterprise_fee, calculator: Spree::Calculator::FlatRate.new(preferred_amount: 1),
+                                  enterprise: order_cycle.coordinator, fee_type: 'admin')
+        }
 
         before do
           add_enterprise_fee handling_fee
           add_product_to_cart order, product_with_fee, quantity: 3
-          visit spree.cart_path
+          visit main_app.cart_path
         end
 
         it "shows admin and handlings row" do
@@ -71,7 +103,7 @@ feature "full-page cart", js: true do
       context "when there are no admin and handling fees" do
         before do
           add_product_to_cart order, product_with_fee, quantity: 2
-          visit spree.cart_path
+          visit main_app.cart_path
         end
 
         it "hides admin and handlings row" do
@@ -85,8 +117,10 @@ feature "full-page cart", js: true do
 
     describe "admin weight calculated fees" do
       context "order with 2 line items" do
-        let(:admin_fee) { create(:enterprise_fee, calculator: Calculator::Weight.new(preferred_per_kg: 1),
-          enterprise: order_cycle.coordinator, fee_type: 'admin') }
+        let(:admin_fee) {
+          create(:enterprise_fee, calculator: Calculator::Weight.new(preferred_per_kg: 1),
+                                  enterprise: order_cycle.coordinator, fee_type: 'admin')
+        }
 
         before do
           product_with_fee.variants.first.update_attributes(unit_value: '2000.0')
@@ -98,7 +132,7 @@ feature "full-page cart", js: true do
           cart_service.populate(variants: { product_with_fee.variants.first.id => 3, product_with_tax.variants.first.id => 3 })
           order.update_distribution_charge!
 
-          visit spree.cart_path
+          visit main_app.cart_path
         end
 
         it "shows the correct weight calculations" do
@@ -114,15 +148,15 @@ feature "full-page cart", js: true do
       before do
         add_enterprise_fee enterprise_fee
         add_product_to_cart order, product_with_tax
-        visit spree.cart_path
+        visit main_app.cart_path
       end
 
       it "shows the total tax for the order, including product tax and tax on fees" do
-        page.should have_selector '.tax-total', text: '11.00' # 10 + 1
+        expect(page).to have_selector '.tax-total', text: '11.00' # 10 + 1
       end
     end
 
-    describe "updating quantities with insufficient stock available" do
+    describe "updating quantities" do
       let(:li) { order.line_items(true).last }
       let(:variant) { product_with_tax.variants.first }
 
@@ -130,37 +164,43 @@ feature "full-page cart", js: true do
         add_product_to_cart order, product_with_tax
       end
 
-      around do |example|
-        original = Spree::Config.allow_backorders
-        Spree::Config.allow_backorders = false
-        example.run
-        Spree::Config.allow_backorders = original
+      describe "when on_hand is zero but variant is on demand" do
+        it "allows updating the quantity" do
+          variant.update_attributes!(on_hand: 0, on_demand: true)
+          visit main_app.cart_path
+
+          fill_in "order_line_items_attributes_0_quantity", with: '5'
+          expect(page).to have_field "order_line_items_attributes_0_quantity", with: '5'
+        end
       end
 
-      it "prevents me from entering an invalid value" do
-        # Given we have 2 on hand, and we've loaded the page after that fact
-        variant.update_attributes! on_hand: 2
-        visit spree.cart_path
+      describe "with insufficient stock available" do
+        it "prevents user from entering an invalid value" do
+          # Given we have 2 on hand, and we've loaded the page after that fact
+          variant.update_attributes!(on_hand: 2, on_demand: false)
+          visit main_app.cart_path
 
-        accept_alert 'Insufficient stock available, only 2 remaining' do
-          fill_in "order_line_items_attributes_0_quantity", with: '4'
+          accept_alert 'Insufficient stock available, only 2 remaining' do
+            fill_in "order_line_items_attributes_0_quantity", with: '4'
+          end
+          expect(page).to have_field "order_line_items_attributes_0_quantity", with: '2'
         end
-        expect(page).to have_field "order_line_items_attributes_0_quantity", with: '2'
-      end
 
-      it "shows the quantities saved, not those submitted" do
-        # Given we load the page with 3 on hand, then the number available drops to 2
-        variant.update_attributes! on_hand: 3
-        visit spree.cart_path
-        variant.update_attributes! on_hand: 2
+        it "shows the quantities saved, not those submitted" do
+          # Given we load the page with 3 on hand, then the number available drops to 2
+          variant.update_attributes! on_demand: false
+          variant.update_attributes! on_hand: 3
+          visit main_app.cart_path
+          variant.update_attributes! on_hand: 2
 
-        accept_alert do
-          fill_in "order_line_items_attributes_0_quantity", with: '4'
+          accept_alert do
+            fill_in "order_line_items_attributes_0_quantity", with: '4'
+          end
+          click_button 'Update'
+
+          expect(page).to have_content "Insufficient stock available, only 2 remaining"
+          expect(page).to have_field "order_line_items_attributes_0_quantity", with: '1'
         end
-        click_button 'Update'
-
-        expect(page).to have_content "Insufficient stock available, only 2 remaining"
-        expect(page).to have_field "order_line_items_attributes_0_quantity", with: '1'
       end
     end
 
@@ -177,7 +217,7 @@ feature "full-page cart", js: true do
         order.distributor.save
         add_product_to_cart order, product_with_tax
         quick_login_as user
-        visit spree.cart_path
+        visit main_app.cart_path
       end
 
       it "shows already ordered line items" do
@@ -201,7 +241,7 @@ feature "full-page cart", js: true do
         expect(page).to have_no_content item1.variant.name
         expect(page).to have_content item2.variant.name
 
-        visit spree.cart_path
+        visit main_app.cart_path
 
         find("td.toggle-bought").click
         expect(page).to have_no_content item1.variant.name

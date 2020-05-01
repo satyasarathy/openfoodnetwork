@@ -2,7 +2,7 @@ version: "2"
 plugins:
   rubocop:
     enabled: true
-    channel: "rubocop-0-57"
+    channel: "rubocop-0-76"
     config:
       file: ".rubocop_styleguide.yml"
   scss-lint:
@@ -11,6 +11,10 @@ plugins:
       ImportantRule:
         enabled: false
       VendorPrefix:
+        enabled: false
+      LeadingZero:
+        enabled: false
+      PropertySortOrder:
         enabled: false
   duplication:
     enabled: true

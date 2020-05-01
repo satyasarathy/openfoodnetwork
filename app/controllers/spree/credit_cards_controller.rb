@@ -10,15 +10,20 @@ module Spree
         render json: @credit_card, serializer: ::Api::CreditCardSerializer, status: :ok
       else
         message = t(:card_could_not_be_saved)
-        render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: message) } }, status: 400
+        render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout,
+                                              error: message) } },
+               status: :bad_request
       end
     rescue Stripe::CardError => e
-      return render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: e.message) } }, status: 400
+      render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout,
+                                            error: e.message) } },
+             status: :bad_request
     end
 
     def update
       @credit_card = Spree::CreditCard.find_by_id(params[:id])
       return update_failed unless @credit_card
+
       authorize! :update, @credit_card
 
       if @credit_card.update_attributes(params[:credit_card])
@@ -26,6 +31,8 @@ module Spree
       else
         update_failed
       end
+    rescue ArgumentError
+      update_failed
     end
 
     def destroy
@@ -49,10 +56,18 @@ module Spree
 
     private
 
-    # Currently can only destroy the whole customer object
+    # It destroys the whole customer object
     def destroy_at_stripe
-      stripe_customer = Stripe::Customer.retrieve(@credit_card.gateway_customer_profile_id)
+      stripe_customer = Stripe::Customer.retrieve(@credit_card.gateway_customer_profile_id, {})
+
       stripe_customer.delete if stripe_customer
+    end
+
+    def stripe_account_id
+      StripeAccount.
+        find_by_enterprise_id(@credit_card.payment_method.preferred_enterprise_id).
+        andand.
+        stripe_user_id
     end
 
     def create_customer(token)
@@ -61,6 +76,7 @@ module Spree
 
     def stored_card_attributes
       return {} unless @customer.try(:default_source)
+
       {
         month: params[:exp_month],
         year: params[:exp_year],
@@ -79,7 +95,7 @@ module Spree
     end
 
     def update_failed
-      render json: { flash: { error: t(:card_could_not_be_updated) } }, status: 400
+      render json: { flash: { error: t(:card_could_not_be_updated) } }, status: :bad_request
     end
   end
 end

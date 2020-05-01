@@ -5,16 +5,14 @@
 # rubocop locally, the default configuration file `.rubocop.yml` loads
 # our "todo lists" to ignore all current violations.
 AllCops:
-  TargetRubyVersion: 2.1
   TargetRailsVersion: 3.2
   Exclude:
+    - 'bin/**/*'
     - 'db/**/*'
     - 'config/**/*'
     - 'script/**/*'
     - 'vendor/**/*'
     - 'node_modules/**/*'
-    # The parser gem fails to parse this file with out current Ruby version.
-    - 'spec/factories.rb'
     # Excluding: inadequate Naming/FileName rule rejects GemFile name with camelcase
     - 'engines/web/Gemfile'
 
@@ -42,7 +40,7 @@ Layout/MultilineMethodCallIndentation:
   Enabled: true
   EnforcedStyle: indented
 
-Metrics/LineLength:
+Layout/LineLength:
   Max: 100
 
 ## TEMPORARY/CONTESTED SETTINGS
@@ -119,6 +117,15 @@ Style/FormatString:
   Enabled: false
   StyleGuide: http://relaxed.ruby.style/#styleformatstring
 
+Style/HashEachMethods:
+  Enabled: false
+
+Style/HashTransformKeys:
+  Enabled: false
+
+Style/HashTransformValues:
+  Enabled: false
+
 Style/IfUnlessModifier:
   Enabled: false
   StyleGuide: http://relaxed.ruby.style/#styleifunlessmodifier
@@ -187,7 +194,20 @@ Metrics/AbcSize:
   Max: 15
 
 Metrics/BlockLength:
-  ExcludedMethods: ["collection", "context", "describe", "it", "member", "namespace", "resource", "resources"]
+  Max: 25
+  ExcludedMethods: [
+    "class_eval",
+    "collection",
+    "context",
+    "describe",
+    "feature",
+    "it",
+    "member",
+    "namespace",
+    "resource",
+    "resources",
+    "scenario"
+  ]
 
 Metrics/BlockNesting:
   Max: 3

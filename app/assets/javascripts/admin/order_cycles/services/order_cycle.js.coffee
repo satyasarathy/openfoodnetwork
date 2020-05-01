@@ -1,4 +1,4 @@
-angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, StatusMessage, Panels) ->
+angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, $timeout, StatusMessage, Panels) ->
   OrderCycleResource = $resource '/admin/order_cycles/:action_name/:order_cycle_id.json', {}, {
     'index':  { method: 'GET', isArray: true}
     'new'   : { method: 'GET', params: { action_name: "new" } }
@@ -44,11 +44,15 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
         @removeDistributionOfVariant(variant.id) if exchange.incoming
 
 
-    addSupplier: (new_supplier_id) ->
-    	this.order_cycle.incoming_exchanges.push({enterprise_id: new_supplier_id, incoming: true, active: true, variants: {}, enterprise_fees: []})
+    addSupplier: (new_supplier_id, callback) ->
+      this.order_cycle.incoming_exchanges.push({enterprise_id: new_supplier_id, incoming: true, active: true, variants: {}, enterprise_fees: []})
+      $timeout ->
+        (callback || angular.noop)()
 
-    addDistributor: (new_distributor_id) ->
-    	this.order_cycle.outgoing_exchanges.push({enterprise_id: new_distributor_id, incoming: false, active: true, variants: {}, enterprise_fees: []})
+    addDistributor: (new_distributor_id, callback) ->
+      this.order_cycle.outgoing_exchanges.push({ enterprise_id: new_distributor_id, incoming: false, active: true, variants: {}, enterprise_fees: [] })
+      $timeout ->
+        (callback || angular.noop)()
 
     removeExchange: (exchange) ->
       if exchange.incoming
@@ -70,18 +74,6 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
 
     removeExchangeFee: (exchange, index) ->
       exchange.enterprise_fees.splice(index, 1)
-
-    productSuppliedToOrderCycle: (product) ->
-      product_variant_ids = (variant.id for variant in product.variants)
-      variant_ids = [product.master_id].concat(product_variant_ids)
-      incomingExchangesVariants = this.incomingExchangesVariants()
-
-      # TODO: This is an O(n^2) implementation of set intersection and thus is slooow.
-      # Use a better algorithm if needed.
-      # Also, incomingExchangesVariants is called every time, when it only needs to be
-      # called once per change to incoming variants. Some sort of caching?
-      ids = (variant_id for variant_id in variant_ids when incomingExchangesVariants.indexOf(variant_id) != -1)
-      ids.length > 0
 
     variantSuppliedToOrderCycle: (variant) ->
       this.incomingExchangesVariants().indexOf(variant.id) != -1
@@ -143,15 +135,18 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
         delete(service.order_cycle.exchanges)
         service.loaded = true
 
-        (callback || angular.noop)(service.order_cycle)
+        $timeout ->
+          (callback || angular.noop)(service.order_cycle)
 
       this.order_cycle
 
     create: (destination) ->
-      return unless @confirmNoDistributors()
       oc = new OrderCycleResource({order_cycle: this.dataForSubmit()})
       oc.$create (data) ->
-        $window.location = destination
+        if destination? && destination.length != 0
+          $window.location = destination
+        else if data.edit_path?
+          $window.location = data.edit_path
       , (response) ->
         if response.data.errors?
           StatusMessage.display('failure', response.data.errors[0])
@@ -159,7 +154,6 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
           StatusMessage.display('failure', t('js.order_cycles.create_failure'))
 
     update: (destination, form) ->
-      return unless @confirmNoDistributors()
       oc = new OrderCycleResource({order_cycle: this.dataForSubmit()})
       oc.$update {order_cycle_id: this.order_cycle.id, reloading: (if destination? then 1 else 0)}, (data) =>
         form.$setPristine() if form
@@ -172,7 +166,6 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
           StatusMessage.display('failure', response.data.errors[0])
         else
           StatusMessage.display('failure', t('js.order_cycles.update_failure'))
-
 
     confirmNoDistributors: ->
       if @order_cycle.outgoing_exchanges.length == 0

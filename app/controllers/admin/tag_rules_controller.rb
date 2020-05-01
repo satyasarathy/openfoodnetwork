@@ -1,21 +1,19 @@
 module Admin
   class TagRulesController < ResourceController
-
     respond_to :json
 
     respond_override destroy: { json: {
-      success: lambda { render nothing: true, :status => 204 }
+      success: lambda { render nothing: true, status: :no_content }
     } }
 
     def map_by_tag
       respond_to do |format|
         format.json do
-          serialiser = ActiveModel::ArraySerializer.new(collection)
-          render json: serialiser.to_json
+          serializer = ActiveModel::ArraySerializer.new(collection)
+          render json: serializer.to_json
         end
       end
     end
-
 
     private
 

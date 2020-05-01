@@ -1,14 +1,15 @@
 - content_for(:title) do
   = t :label_map
 
-= inject_enterprises
+- content_for :injection_data do
+  = inject_enterprise_shopfront_list
 
 .map-container{"fill-vertical" => true}
   %map{"ng-controller" => "MapCtrl"}
-    %google-map{options: "map.additional_options", center: "map.center", zoom: "map.zoom", styles: "map.styles", draggable: "true"}
+    %ui-gmap-google-map{options: "map.additional_options", center: "map.center", zoom: "map.zoom", styles: "map.styles", draggable: "true"}
       %map-osm-tiles
       %map-search
-      %markers{models: "OfnMap.enterprises", fit: "true",
+      %ui-gmap-markers{models: "OfnMap.enterprises", fit: "true",
       coords: "'self'", icon: "'icon'", click: "'reveal'"}
 
 .map-footer

@@ -10,23 +10,10 @@ describe Admin::SchedulesController, type: :controller do
     let!(:coordinated_schedule) { create(:schedule, order_cycles: [coordinated_order_cycle] ) }
     let!(:uncoordinated_schedule) { create(:schedule, order_cycles: [other_order_cycle] ) }
 
-    context "html" do
-      context "where I manage an order cycle coordinator" do
-        before do
-          controller.stub spree_current_user: managed_coordinator.owner
-        end
-
-        it "returns an empty @collection" do
-          spree_get :index, format: :html
-          expect(assigns(:collection)).to eq []
-        end
-      end
-    end
-
     context "json" do
       context "where I manage an order cycle coordinator" do
         before do
-          controller.stub spree_current_user: managed_coordinator.owner
+          allow(controller).to receive_messages spree_current_user: managed_coordinator.owner
         end
 
         let(:params) { { format: :json } }
@@ -40,9 +27,21 @@ describe Admin::SchedulesController, type: :controller do
           expect(ActiveModel::ArraySerializer).to receive(:new)
           spree_get :index, params
         end
+
+        context "and there is a schedule of an OC coordinated by _another_ enterprise I manage and the first enterprise is given" do
+          let!(:other_managed_coordinator) { create(:distributor_enterprise, owner: managed_coordinator.owner) }
+          let!(:other_coordinated_order_cycle) { create(:simple_order_cycle, coordinator: other_managed_coordinator) }
+          let!(:other_coordinated_schedule) { create(:schedule, order_cycles: [other_coordinated_order_cycle] ) }
+          let(:params) { { format: :json, enterprise_id: managed_coordinator.id } }
+
+          it "scopes @collection to schedules containing order_cycles coordinated by the first enterprise" do
+            spree_get :index, params
+            expect(assigns(:collection)).to eq [coordinated_schedule]
+          end
+        end
       end
 
-      context "where I manage an order cycle coordinator" do
+      context "where I dont manage an order cycle coordinator" do
         it "returns an empty collection" do
           spree_get :index, format: :json
           expect(assigns(:collection)).to be_nil
@@ -68,7 +67,7 @@ describe Admin::SchedulesController, type: :controller do
         render_views
 
         before do
-          controller.stub spree_current_user: user
+          allow(controller).to receive_messages spree_current_user: user
         end
 
         it "allows me to update basic information" do
@@ -91,7 +90,7 @@ describe Admin::SchedulesController, type: :controller do
 
         it "syncs proxy orders when order_cycle_ids change" do
           syncer_mock = double(:syncer)
-          allow(OpenFoodNetwork::ProxyOrderSyncer).to receive(:new) { syncer_mock }
+          allow(OrderManagement::Subscriptions::ProxyOrderSyncer).to receive(:new) { syncer_mock }
           expect(syncer_mock).to receive(:sync!).exactly(2).times
 
           spree_put :update, format: :json, id: coordinated_schedule.id, schedule: { order_cycle_ids: [coordinated_order_cycle.id, coordinated_order_cycle2.id] }
@@ -102,7 +101,7 @@ describe Admin::SchedulesController, type: :controller do
 
       context "where I don't manage any of the schedule's coordinators" do
         before do
-          controller.stub spree_current_user: uncoordinated_order_cycle2.coordinator.owner
+          allow(controller).to receive_messages spree_current_user: uncoordinated_order_cycle2.coordinator.owner
         end
 
         it "prevents me from updating the schedule" do
@@ -151,7 +150,7 @@ describe Admin::SchedulesController, type: :controller do
 
           it "sync proxy orders" do
             syncer_mock = double(:syncer)
-            allow(OpenFoodNetwork::ProxyOrderSyncer).to receive(:new) { syncer_mock }
+            allow(OrderManagement::Subscriptions::ProxyOrderSyncer).to receive(:new) { syncer_mock }
             expect(syncer_mock).to receive(:sync!).once
 
             create_schedule params

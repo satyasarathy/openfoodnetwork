@@ -1,96 +1,168 @@
-@import "compass";
-@import "branding";
-@import "mixins";
-@import "typography";
-@import "variables";
+@import 'compass';
+@import 'branding';
+@import 'mixins';
+@import 'typography';
+@import 'variables';
 
-nav {
+nav.top-bar {
   @include textpress;
-
   text-shadow: none;
-
-  // Create center style for nav ul (foundation provides left and right)
   text-align: center;
+  font-size: 16px;
+  margin-bottom: 0;
+  height: $topbar-height;
+}
 
-  .top-bar-section {
-    // Avoid menu items blocking logo
-    li:not(.has-form), li:not(.has-form) a:not(.button), li:not(.has-form) a:not(.button):hover {
-      background-color: transparent;
-    }
-
-    ul.center {
-      display: inline-block;
-
-      // By default, we center between the left and right uls, but we want to be centered
-      // relative to the whole page. The difference in width between the other uls is 74px,
-      // so we offset by that amount here.
-      margin-left: -74px;
-    }
-  }
-
-  .joyride-tip-guide .button {
-    text-shadow: none;
-  }
-
-  // Default overrides - big menu
-  .top-bar-section .has-dropdown > a {
-    padding-right: ($topbar-height / 3) !important;
-
-    i.ofn-i_022-cog, .ofn-i_071-globe {
-      font-size: 24px;
-      line-height: $topbar-height;
-    }
-
-    i.ofn-i_071-globe {
-      color: #666;
-      font-size: 27px
-    }
-  }
-
-  .top-bar-section .has-dropdown > a:after {
+@media #{$large-only} {
+  .top-bar--menu-item-with-icon span {
     display: none;
   }
 
-  .top-bar-section ul li > a {
-    font-size: 0.75rem;
-    height: $topbar-height;
-    opacity: 0.8;
-
-    &:hover, &:focus, &:active {
-      opacity: 1;
-    }
-
-    @include transition(all 0.3s ease-in-out);
-  }
-
-  .top-bar-section ul li.ofn-logo > a {
-    display: table-cell;
+  .top-bar--current-hub-prefix,
+  .top-bar--current-hub-name {
+    display: inline-block;
     vertical-align: middle;
-    opacity: 1;
   }
 
-  .nav-branded {
-    color: $brand-colour;
+  .top-bar--current-hub-name {
+    max-width: 10em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 
-    span {
-      font-size: 13px;
+.top-bar-section ul li > a.top-bar--menu-item-with-icon {
+  display: inline;
+}
+
+.top-bar--menu-item-with-icon i,
+.top-bar--menu-item-with-icon img {
+  line-height: $topbar-height;
+}
+
+.top-bar-section {
+  border-bottom: 1px solid $light-grey-transparency;
+
+  a.icon {
+    &:hover {
+      text-decoration: none;
+    }
+
+    > span {
+      display: inline-block;
+      font-weight: 300;
+      height: $topbar-height;
+      line-height: $topbar-height;
+      vertical-align: top;
     }
   }
 
-  .nav-primary {
-    @include headingFont;
-
-    font-size: 0.875rem;
-    font-weight: 300;
+  // Avoid menu items blocking logo
+  li:not(.has-form), li:not(.has-form) a:not(.button), li:not(.has-form) a:not(.button):hover {
+    background-color: transparent;
   }
 
-  ul .nav-primary {
-    text-transform: uppercase;
+  li.cart {
+    background-color: #f4704c;
+
+    a span {
+      color: white;
+    }
+
+    i {
+      color: white;
+    }
+
+    .count {
+      position: relative;
+
+      img {
+        width: 32px;
+        height: 26px;
+        margin-top: 16px;
+        margin-right: 5px;
+      }
+
+      span {
+        background-color: white;
+        border-radius: 20px;
+        color: #f4704c;
+        font-size: 12px;
+        line-height: 18px;
+        position: absolute;
+        right: -8px;
+        top: 8px;
+        width: 18px;
+      }
+    }
+  }
+
+  ul.center {
+    display: inline-block;
+
+    // By default, we center between the left and right uls, but we want to be centered
+    // relative to the whole page. The difference in width between the other uls is 74px,
+    // so we offset by that amount here.
+    margin-left: -74px;
   }
 
   ul.dropdown {
     border: 1px solid $smoke;
     border-top: none;
+  }
+
+  ul.right {
+    > li {
+      border-left: 1px solid #ddd;
+      padding: 0 14px;
+
+      @media screen and (max-width: 1450px) {
+        padding: 0 6px;
+      }
+    }
+
+    li > a {
+      opacity: 0.8;
+
+      &:hover, &:focus, &:active {
+        opacity: 1;
+      }
+
+      i {
+        color: #f4704c;
+        display: inline-block;
+        margin-right: 2px;
+        margin-top: -3px;
+        vertical-align: middle;
+      }
+
+      img {
+        margin-right: 2px;
+        margin-top: -5px;
+      }
+    }
+  }
+
+  ul li > a {
+    font-size: 16px;
+    height: $topbar-height;
+  }
+
+  ul li.ofn-logo > a {
+    display: table-cell;
+    vertical-align: middle;
+  }
+
+  ul .nav-primary {
+    @include headingFont;
+    text-transform: uppercase;
+    font-weight: 300;
+    font-size: 16px;
+  }
+
+  .joyride-tip-guide .button {
+    text-shadow: none;
   }
 }
 
@@ -98,6 +170,44 @@ nav {
 
 .tab-bar {
   background-color: white;
+  border-bottom: 1px solid $light-grey-transparency;
+  height: 2.8em;
+  position: fixed;
+  width: 100%;
+  z-index: 1;
+
+  .cart-span {
+    background-color: #f4704c;
+    padding: 13px;
+
+    a,
+    span {
+      color: white;
+      display: inline-block;
+    }
+
+    .count {
+      position: relative;
+
+      img {
+        margin-left: 2px;
+        width: 26px;
+      }
+
+      span {
+        background-color: white;
+        border-radius: 20px;
+        color: #f4704c;
+        font-size: 12px;
+        line-height: 16px;
+        position: absolute;
+        right: -10px;
+        text-align: center;
+        top: -9px;
+        width: 16px;
+      }
+    }
+  }
 }
 
 .off-canvas-list li.language-switcher ul li {
@@ -114,8 +224,6 @@ nav {
 }
 
 .off-canvas-wrap.move-right .tab-bar .menu-icon span {
-  -moz-box-shadow: 0 0px 0 1px #666, 0 7px 0 1px #666, 0 14px 0 1px #666;
-  -webkit-box-shadow: 0 0px 0 1px #666, 0 7px 0 1px #666, 0 14px 0 1px #666;
   box-shadow: 0 0px 0 1px #666, 0 7px 0 1px #666, 0 14px 0 1px #666;
 }
 
@@ -127,10 +235,19 @@ nav {
   padding: 9px 0 0 9px;
 }
 
+// Leave space for tab bar, in screens smaller than large.
+[role="main"] {
+  margin-top: 2.8em;
+
+  @media #{$large-up} {
+    margin-top: 0;
+  }
+}
+
 .top-bar .ofn-logo img {
   height: auto;
   width: auto;
-  max-height: 51px;
+  max-height: 44px;
   max-width: 250px;
 }
 
@@ -138,7 +255,7 @@ nav {
   background-color: white;
 }
 
-.off-canvas-wrap.move-right ul.off-canvas-list {
+.off-canvas-wrap ul.off-canvas-list {
   font-size: 0.875rem;
 
   .li-menu {
@@ -158,12 +275,10 @@ nav {
       background-color: transparent;
       color: $brand-colour;
     }
-
-    @include transition(all 0.3s ease-in-out);
   }
 }
 
-.off-canvas-wrap.move-right ul.off-canvas-list i {
+.off-canvas-wrap ul.off-canvas-list i {
   font-size: 1.5rem;
   margin-right: 0.25rem;
 }
@@ -172,7 +287,8 @@ nav {
 
 @media screen and (max-width: 1450px) {
   nav .top-bar-section {
-    ul li a, .has-dropdown > a {
+    ul li a,
+    .has-dropdown > a {
       padding: 0 ($topbar-height / 8) !important;
     }
 
@@ -193,11 +309,5 @@ nav {
   body.off-canvas {
     // padding required to placehold for fixed menu bar
     padding-top: 0;
-  }
-
-  section.right {
-    .nav-branded {
-      padding: 0 1em;
-    }
   }
 }

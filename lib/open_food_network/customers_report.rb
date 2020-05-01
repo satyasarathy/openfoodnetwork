@@ -10,23 +10,24 @@ module OpenFoodNetwork
     def header
       if is_mailing_list?
         [I18n.t(:report_header_email),
-          I18n.t(:report_header_first_name),
-          I18n.t(:report_header_last_name),
-          I18n.t(:report_header_suburb)]
+         I18n.t(:report_header_first_name),
+         I18n.t(:report_header_last_name),
+         I18n.t(:report_header_suburb)]
       else
         [I18n.t(:report_header_first_name),
-          I18n.t(:report_header_last_name),
-          I18n.t(:report_header_billing_address),
-          I18n.t(:report_header_email),
-          I18n.t(:report_header_phone),
-          I18n.t(:report_header_hub),
-          I18n.t(:report_header_hub_address),
-          I18n.t(:report_header_shipping_method)]
+         I18n.t(:report_header_last_name),
+         I18n.t(:report_header_billing_address),
+         I18n.t(:report_header_email),
+         I18n.t(:report_header_phone),
+         I18n.t(:report_header_hub),
+         I18n.t(:report_header_hub_address),
+         I18n.t(:report_header_shipping_method)]
       end
     end
 
     def table
       return [] unless @compile_table
+
       orders.map do |order|
         if is_mailing_list?
           [order.email,
@@ -37,13 +38,13 @@ module OpenFoodNetwork
           ba = order.billing_address
           da = order.distributor.andand.address
           [ba.firstname,
-            ba.lastname,
-            [ba.address1, ba.address2, ba.city].join(" "),
-            order.email,
-            ba.phone,
-            order.distributor.andand.name,
-            [da.andand.address1, da.andand.address2, da.andand.city].join(" "),
-            order.shipping_method.andand.name]
+           ba.lastname,
+           [ba.address1, ba.address2, ba.city].join(" "),
+           order.email,
+           ba.phone,
+           order.distributor.andand.name,
+           [da.andand.address1, da.andand.address2, da.andand.city].join(" "),
+           order.shipping_method.andand.name]
         end
       end
     end

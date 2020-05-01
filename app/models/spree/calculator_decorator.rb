@@ -1,6 +1,5 @@
 module Spree
   Calculator.class_eval do
-
     private
 
     # Given an object which might be an Order or a LineItem (amongst
@@ -10,7 +9,7 @@ module Spree
         [object]
       elsif object.respond_to? :line_items
         object.line_items
-      elsif object.order.present?
+      elsif object.respond_to?(:order) && object.order.present?
         object.order.line_items
       else
         [object]

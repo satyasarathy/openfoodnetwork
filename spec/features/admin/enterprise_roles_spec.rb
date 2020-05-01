@@ -1,13 +1,12 @@
 require 'spec_helper'
 
-feature %q{
+feature '
   As an Administrator
   I want to manage relationships between users and enterprises
-}, js: true do
+', js: true do
   include AuthenticationWorkflow
   include WebHelper
   include OpenFoodNetwork::EmailHelper
-
 
   context "as a site administrator" do
     before { login_to_admin_section }
@@ -27,10 +26,10 @@ feature %q{
 
       # Then I should see the relationships
       within('table#enterprise-roles') do
-        page.should have_relationship u1, e1
-        page.should have_relationship u1, e2
-        page.should have_relationship u2, e3
-        page.should have_relationship u2, e4
+        expect(page).to have_relationship u1, e1
+        expect(page).to have_relationship u1, e2
+        expect(page).to have_relationship u2, e3
+        expect(page).to have_relationship u2, e4
       end
     end
 
@@ -44,9 +43,9 @@ feature %q{
       click_button 'Create'
 
       # Wait for row to appear since have_relationship doesn't wait
-      page.should have_selector 'tr', count: 3
-      page.should have_relationship u, e
-      EnterpriseRole.where(user_id: u, enterprise_id: e).should be_present
+      expect(page).to have_selector 'tr', count: 3
+      expect(page).to have_relationship u, e
+      expect(EnterpriseRole.where(user_id: u, enterprise_id: e)).to be_present
     end
 
     scenario "attempting to create a relationship with invalid data" do
@@ -62,7 +61,7 @@ feature %q{
         click_button 'Create'
 
         # Then I should see an error message
-        page.should have_content "That role is already present."
+        expect(page).to have_content "That role is already present."
       end.to change(EnterpriseRole, :count).by(0)
     end
 
@@ -72,7 +71,7 @@ feature %q{
       er = create(:enterprise_role, user: u, enterprise: e)
 
       visit admin_enterprise_roles_path
-      page.should have_relationship u, e
+      expect(page).to have_relationship u, e
 
       within("#enterprise_role_#{er.id}") do
         accept_alert do
@@ -81,9 +80,9 @@ feature %q{
       end
 
       # Wait for row to disappear, otherwise have_relationship waits 30 seconds.
-      page.should_not have_selector "#enterprise_role_#{er.id}"
-      page.should_not have_relationship u, e
-      EnterpriseRole.where(id: er.id).should be_empty
+      expect(page).not_to have_selector "#enterprise_role_#{er.id}"
+      expect(page).not_to have_relationship u, e
+      expect(EnterpriseRole.where(id: er.id)).to be_empty
     end
 
     describe "using the enterprise managers interface" do
@@ -98,7 +97,8 @@ feature %q{
       before do
         click_link 'Enterprises'
         click_link 'Test Enterprise'
-        within('.side_menu') { click_link 'Users' }
+        navigate_to_enterprise_users
+        expect(page).to have_selector "table.managers"
       end
 
       it "lists managers and shows icons for owner, contact, and email confirmation" do
@@ -130,7 +130,8 @@ feature %q{
       it "shows changes to enterprise contact or owner" do
         select2_select user2.email, from: 'receives_notifications_dropdown'
         within('#save-bar') { click_button 'Update' }
-        within('.side_menu') { click_link 'Users' }
+        navigate_to_enterprise_users
+        expect(page).to have_selector "table.managers"
 
         within 'table.managers' do
           within "tr#manager-#{user1.id}" do
@@ -155,6 +156,9 @@ feature %q{
           click_button I18n.t('js.admin.modals.close')
         end
 
+        expect(page).not_to have_selector "#invite-manager-modal"
+        expect(page).to have_selector "table.managers"
+
         new_user = Spree::User.find_by_email_and_confirmed_at(new_email, nil)
         expect(Enterprise.managed_by(new_user)).to include enterprise
 
@@ -169,8 +173,13 @@ feature %q{
     end
   end
 
-
   private
+
+  def navigate_to_enterprise_users
+    within ".side_menu" do
+      click_link "Users"
+    end
+  end
 
   def have_relationship(user, enterprise)
     have_table_row [user.email, 'manages', enterprise.name, '']

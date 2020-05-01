@@ -32,21 +32,11 @@ module Admin
     end
 
     def create
-      form = SubscriptionForm.new(@subscription, params[:subscription])
-      if form.save
-        render_as_json @subscription
-      else
-        render json: { errors: form.json_errors }, status: :unprocessable_entity
-      end
+      save_form_and_render(false)
     end
 
     def update
-      form = SubscriptionForm.new(@subscription, params[:subscription])
-      if form.save
-        render_as_json @subscription, order_update_issues: form.order_update_issues
-      else
-        render json: { errors: form.json_errors }, status: :unprocessable_entity
-      end
+      save_form_and_render
     end
 
     def cancel
@@ -67,14 +57,29 @@ module Admin
     end
 
     def unpause
-      @subscription.update_attributes(paused_at: nil)
-      render_as_json @subscription
+      params[:subscription][:paused_at] = nil
+      save_form_and_render
     end
 
     private
 
+    def save_form_and_render(render_issues = true)
+      form = OrderManagement::Subscriptions::Form.new(@subscription, params[:subscription])
+      unless form.save
+        render json: { errors: form.json_errors }, status: :unprocessable_entity
+        return
+      end
+
+      if render_issues
+        render_as_json @subscription, order_update_issues: form.order_update_issues
+      else
+        render_as_json @subscription
+      end
+    end
+
     def permissions
       return @permissions unless @permissions.nil?
+
       @permissions = OpenFoodNetwork::Permissions.new(spree_current_user)
     end
 
@@ -121,14 +126,17 @@ module Admin
 
     def check_for_open_orders
       return if params[:open_orders] == 'cancel'
+
       @open_orders_to_keep = @subscription.proxy_orders.placed_and_open.pluck(:id)
       return if @open_orders_to_keep.empty? || params[:open_orders] == 'keep'
+
       render json: { errors: { open_orders: t('admin.subscriptions.confirm_cancel_open_orders_msg') } }, status: :conflict
     end
 
     def check_for_canceled_orders
       return if params[:canceled_orders] == 'notified'
       return if @subscription.proxy_orders.active.canceled.empty?
+
       render json: { errors: { canceled_orders: t('admin.subscriptions.resume_canceled_orders_msg') } }, status: :conflict
     end
 

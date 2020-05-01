@@ -1,199 +1,228 @@
-require 'spec_helper'
-require 'spree/api/testing_support/helpers'
+require "spec_helper"
 
 module Api
   describe OrderCyclesController, type: :controller do
-    include Spree::Api::TestingSupport::Helpers
-    include AuthenticationWorkflow
-    render_views
+    let!(:distributor) { create(:distributor_enterprise) }
+    let!(:order_cycle) { create(:simple_order_cycle, distributors: [distributor]) }
+    let!(:exchange) { order_cycle.exchanges.to_enterprises(distributor).outgoing.first }
+    let!(:taxon1) { create(:taxon, name: 'Meat') }
+    let!(:taxon2) { create(:taxon, name: 'Vegetables') }
+    let!(:taxon3) { create(:taxon, name: 'Cake') }
+    let!(:property1) { create(:property, presentation: 'Organic') }
+    let!(:property2) { create(:property, presentation: 'Dairy-Free') }
+    let!(:property3) { create(:property, presentation: 'May Contain Nuts') }
+    let!(:product1) { create(:product, primary_taxon: taxon1, properties: [property1]) }
+    let!(:product2) { create(:product, primary_taxon: taxon2, properties: [property2]) }
+    let!(:product3) { create(:product, primary_taxon: taxon2) }
+    let!(:product4) { create(:product, primary_taxon: taxon3, properties: [property3]) }
+    let!(:user) { create(:user) }
+    let(:customer) { create(:customer, user: user, enterprise: distributor) }
 
-    describe "managed" do
-      let!(:oc1) { FactoryBot.create(:simple_order_cycle) }
-      let!(:oc2) { FactoryBot.create(:simple_order_cycle) }
-      let(:coordinator) { oc1.coordinator }
-      let(:attributes) { [:id, :name, :suppliers, :distributors] }
+    before do
+      exchange.variants << product1.variants.first
+      exchange.variants << product2.variants.first
+      exchange.variants << product3.variants.first
+      allow(controller).to receive(:spree_current_user) { user }
+    end
 
-      before do
-        allow(controller).to receive(:spree_current_user) { current_api_user }
+    describe "#products" do
+      it "loads products for distributed products in the order cycle" do
+        api_get :products, id: order_cycle.id, distributor: distributor.id
+
+        expect(product_ids).to include product1.id, product2.id, product3.id
       end
 
-      context "as a normal user" do
-        sign_in_as_user!
+      context "with variant overrides" do
+        let!(:vo1) {
+          create(:variant_override,
+                 hub: distributor,
+                 variant: product1.variants.first,
+                 price: 1234.56)
+        }
+        let!(:vo2) {
+          create(:variant_override,
+                 hub: distributor,
+                 variant: product2.variants.first,
+                 count_on_hand: 0)
+        }
 
-        it "should deny me access to managed order cycles" do
-          spree_get :managed, { :format => :json }
-          assert_unauthorized!
+        it "returns results scoped with variant overrides" do
+          api_get :products, id: order_cycle.id, distributor: distributor.id
+
+          overidden_product = json_response.select{ |product| product['id'] == product1.id }
+          expect(overidden_product[0]['variants'][0]['price']).to eq vo1.price.to_s
+        end
+
+        it "does not return products where the variant overrides are out of stock" do
+          api_get :products, id: order_cycle.id, distributor: distributor.id
+
+          expect(product_ids).to_not include product2.id
         end
       end
 
-      context "as an enterprise user" do
-        sign_in_as_enterprise_user! [:coordinator]
+      context "with property filters" do
+        it "filters by product property" do
+          api_get :products, id: order_cycle.id, distributor: distributor.id,
+                             q: { properties_id_or_supplier_properties_id_in_any: [property1.id, property2.id] }
 
-        it "retrieves a list of variants with appropriate attributes" do
-          get :managed, { :format => :json }
-          keys = json_response.first.keys.map{ |key| key.to_sym }
-          attributes.all?{ |attr| keys.include? attr }.should == true
+          expect(product_ids).to include product1.id, product2.id
+          expect(product_ids).to_not include product3.id
         end
       end
 
-      context "as an administrator" do
-        sign_in_as_admin!
+      context "with taxon filters" do
+        it "filters by taxon" do
+          api_get :products, id: order_cycle.id, distributor: distributor.id,
+                             q: { primary_taxon_id_in_any: [taxon2.id] }
 
-        it "retrieves a list of variants with appropriate attributes" do
-          get :managed, { :format => :json }
-          keys = json_response.first.keys.map{ |key| key.to_sym }
-          attributes.all?{ |attr| keys.include? attr }.should == true
+          expect(product_ids).to include product2.id, product3.id
+          expect(product_ids).to_not include product1.id, product4.id
+        end
+      end
+
+      context "when tag rules apply" do
+        let!(:vo1) {
+          create(:variant_override,
+                 hub: distributor,
+                 variant: product1.variants.first)
+        }
+        let!(:vo2) {
+          create(:variant_override,
+                 hub: distributor,
+                 variant: product2.variants.first)
+        }
+        let!(:vo3) {
+          create(:variant_override,
+                 hub: distributor,
+                 variant: product3.variants.first)
+        }
+        let(:default_hide_rule) {
+          create(:filter_products_tag_rule,
+                 enterprise: distributor,
+                 is_default: true,
+                 preferred_variant_tags: "hide_these_variants_from_everyone",
+                 preferred_matched_variants_visibility: "hidden")
+        }
+        let!(:hide_rule) {
+          create(:filter_products_tag_rule,
+                 enterprise: distributor,
+                 preferred_variant_tags: "hide_these_variants",
+                 preferred_customer_tags: "hide_from_these_customers",
+                 preferred_matched_variants_visibility: "hidden" )
+        }
+        let!(:show_rule) {
+          create(:filter_products_tag_rule,
+                 enterprise: distributor,
+                 preferred_variant_tags: "show_these_variants",
+                 preferred_customer_tags: "show_for_these_customers",
+                 preferred_matched_variants_visibility: "visible" )
+        }
+
+        it "does not return variants hidden by general rules" do
+          vo1.update_attribute(:tag_list, default_hide_rule.preferred_variant_tags)
+
+          api_get :products, id: order_cycle.id, distributor: distributor.id
+
+          expect(product_ids).to_not include product1.id
+        end
+
+        it "does not return variants hidden for this specific customer" do
+          vo2.update_attribute(:tag_list, hide_rule.preferred_variant_tags)
+          customer.update_attribute(:tag_list, hide_rule.preferred_customer_tags)
+
+          api_get :products, id: order_cycle.id, distributor: distributor.id
+
+          expect(product_ids).to_not include product2.id
+        end
+
+        it "returns hidden variants made visible for this specific customer" do
+          vo1.update_attribute(:tag_list, default_hide_rule.preferred_variant_tags)
+          vo3.update_attribute(:tag_list, "#{show_rule.preferred_variant_tags},#{default_hide_rule.preferred_variant_tags}")
+          customer.update_attribute(:tag_list, show_rule.preferred_customer_tags)
+
+          api_get :products, id: order_cycle.id, distributor: distributor.id
+
+          expect(product_ids).to_not include product1.id
+          expect(product_ids).to include product3.id
         end
       end
     end
 
-    describe "accessible" do
-      context "without :as parameter" do
-        let(:oc_supplier) { create(:supplier_enterprise) }
-        let(:oc_distributor) { create(:distributor_enterprise) }
-        let(:other_supplier) { create(:supplier_enterprise) }
-        let(:oc_supplier_user) do
-          user = create(:user)
-          user.spree_roles = []
-          user.enterprise_roles.create(enterprise: oc_supplier)
-          user.save!
-          user
-        end
-        let(:oc_distributor_user) do
-          user = create(:user)
-          user.spree_roles = []
-          user.enterprise_roles.create(enterprise: oc_distributor)
-          user.save!
-          user
-        end
-        let(:other_supplier_user) do
-          user = create(:user)
-          user.spree_roles = []
-          user.enterprise_roles.create(enterprise: other_supplier)
-          user.save!
-          user
-        end
-        let!(:order_cycle) { create(:simple_order_cycle, suppliers: [oc_supplier], distributors: [oc_distributor]) }
+    describe "#taxons" do
+      it "loads taxons for distributed products in the order cycle" do
+        api_get :taxons, id: order_cycle.id, distributor: distributor.id
 
-        context "as the user of a supplier to an order cycle" do
-          before do
-            allow(controller).to receive(:spree_current_user) { oc_supplier_user }
-          end
+        taxons = json_response.map{ |taxon| taxon['name'] }
 
-          it "gives me access" do
-            spree_get :accessible, { :template => 'bulk_index', :format => :json }
+        expect(json_response.length).to be 2
+        expect(taxons).to include taxon1.name, taxon2.name
+      end
+    end
 
-            json_response.length.should == 1
-            json_response[0]['id'].should == order_cycle.id
-          end
-        end
+    describe "#properties" do
+      it "loads properties for distributed products in the order cycle" do
+        api_get :properties, id: order_cycle.id, distributor: distributor.id
 
-        context "as the user of some other supplier" do
-          before do
-            allow(controller).to receive(:spree_current_user) { other_supplier_user }
-          end
+        properties = json_response.map{ |property| property['name'] }
 
-          it "does not give me access" do
-            spree_get :accessible, { :template => 'bulk_index', :format => :json }
-            json_response.length.should == 0
-          end
-        end
-
-        context "as the user of a hub for the order cycle" do
-          before do
-            allow(controller).to receive(:spree_current_user) { oc_distributor_user }
-          end
-
-          it "gives me access" do
-            spree_get :accessible, { :template => 'bulk_index', :format => :json }
-
-            json_response.length.should == 1
-            json_response[0]['id'].should == order_cycle.id
-          end
-        end
+        expect(json_response.length).to be 2
+        expect(properties).to include property1.presentation, property2.presentation
       end
 
-      context "when the :as parameter is set to 'distributor'" do
-        let(:user) { create_enterprise_user }
-        let(:distributor) { create(:distributor_enterprise) }
-        let(:producer) { create(:supplier_enterprise) }
-        let(:coordinator) { create(:distributor_enterprise) }
-        let!(:oc) { create(:simple_order_cycle, coordinator: coordinator, distributors: [distributor], suppliers: [producer]) }
+      context "with producer properties" do
+        let!(:property4) { create(:property) }
+        let!(:producer_property) {
+          create(:producer_property, producer_id: product1.supplier.id, property: property4)
+        }
 
-        let(:params) { { format: :json, as: 'distributor' } }
+        it "loads producer properties for distributed products in the order cycle" do
+          api_get :properties, id: order_cycle.id, distributor: distributor.id
 
-        before do
-          allow(controller).to receive(:spree_current_user) { user }
-        end
+          properties = json_response.map{ |property| property['name'] }
 
-        context "as the manager of a supplier in an order cycle" do
-          before { user.enterprise_roles.create(enterprise: producer) }
-
-          it "does not return the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to_not include oc
-          end
-        end
-
-        context "as the manager of a distributor in an order cycle" do
-          before { user.enterprise_roles.create(enterprise: distributor) }
-
-          it "returns the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to include oc
-          end
-        end
-
-        context "as the manager of the coordinator of an order cycle" do
-          before { user.enterprise_roles.create(enterprise: coordinator) }
-
-          it "returns the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to include oc
-          end
+          expect(json_response.length).to be 3
+          expect(properties).to include property1.presentation, property2.presentation,
+                                        producer_property.property.presentation
         end
       end
+    end
 
-      context "when the :as parameter is set to 'producer'" do
-        let(:user) { create_enterprise_user }
-        let(:distributor) { create(:distributor_enterprise) }
-        let(:producer) { create(:supplier_enterprise) }
-        let(:coordinator) { create(:distributor_enterprise) }
-        let!(:oc) { create(:simple_order_cycle, coordinator: coordinator, distributors: [distributor], suppliers: [producer]) }
+    context "with custom taxon ordering applied and duplicate product names in the order cycle" do
+      let!(:supplier) { create(:supplier_enterprise) }
+      let!(:product5) { create(:product, name: "Duplicate name", primary_taxon: taxon3, supplier: supplier) }
+      let!(:product6) { create(:product, name: "Duplicate name", primary_taxon: taxon3, supplier: supplier) }
+      let!(:product7) { create(:product, name: "Duplicate name", primary_taxon: taxon2, supplier: supplier) }
+      let!(:product8) { create(:product, name: "Duplicate name", primary_taxon: taxon2, supplier: supplier) }
 
-        let(:params) { { format: :json, as: 'producer' } }
-
-        before do
-          allow(controller).to receive(:spree_current_user) { user }
-        end
-
-        context "as the manager of a producer in an order cycle" do
-          before { user.enterprise_roles.create(enterprise: producer) }
-
-          it "returns the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to include oc
-          end
-        end
-
-        context "as the manager of a distributor in an order cycle" do
-          before { user.enterprise_roles.create(enterprise: distributor) }
-
-          it "does not return the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to_not include oc
-          end
-        end
-
-        context "as the manager of the coordinator of an order cycle" do
-          before { user.enterprise_roles.create(enterprise: coordinator) }
-
-          it "returns the order cycle" do
-            spree_get :accessible, params
-            expect(assigns(:order_cycles)).to include oc
-          end
-        end
+      before do
+        distributor.preferred_shopfront_taxon_order = "#{taxon2.id},#{taxon3.id},#{taxon1.id}"
+        exchange.variants << product5.variants.first
+        exchange.variants << product6.variants.first
+        exchange.variants << product7.variants.first
+        exchange.variants << product8.variants.first
       end
+
+      it "displays products in new order" do
+        api_get :products, id: order_cycle.id, distributor: distributor.id
+        expect(product_ids).to eq [product7.id, product8.id, product2.id, product3.id, product5.id, product6.id, product1.id]
+      end
+
+      it "displays products in correct order across multiple pages" do
+        api_get :products, id: order_cycle.id, distributor: distributor.id, per_page: 3
+        expect(product_ids).to eq [product7.id, product8.id, product2.id]
+
+        api_get :products, id: order_cycle.id, distributor: distributor.id, per_page: 3, page: 2
+        expect(product_ids).to eq [product3.id, product5.id, product6.id]
+
+        api_get :products, id: order_cycle.id, distributor: distributor.id, per_page: 3, page: 3
+        expect(product_ids).to eq [product1.id]
+      end
+    end
+
+    private
+
+    def product_ids
+      json_response.map{ |product| product['id'] }
     end
   end
 end

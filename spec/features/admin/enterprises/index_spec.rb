@@ -57,7 +57,7 @@ feature 'Enterprises Index' do
             select d_manager.email, from: 'enterprise_set_collection_attributes_0_owner_id'
           end
           click_button "Update"
-          flash_message.should == 'Enterprises updated successfully'
+          expect(flash_message).to eq('Enterprises updated successfully')
           distributor = Enterprise.find(d.id)
           expect(distributor.visible).to eq false
           expect(distributor.sells).to eq 'any'
@@ -76,15 +76,23 @@ feature 'Enterprises Index' do
           visit admin_enterprises_path
         end
 
+        def enterprise_row_index(enterprise_name)
+          enterprise_row_number = all('tr').index { |tr| tr.text.include? enterprise_name }
+          enterprise_row_number - 1
+        end
+
         it "does not update the enterprises and displays errors" do
+          d_row_index = enterprise_row_index(d.name)
           within("tr.enterprise-#{d.id}") do
-            select d_manager.email, from: 'enterprise_set_collection_attributes_0_owner_id'
+            select d_manager.email, from: "enterprise_set_collection_attributes_#{d_row_index}_owner_id"
           end
+
+          second_distributor_row_index = enterprise_row_index(second_distributor.name)
           within("tr.enterprise-#{second_distributor.id}") do
-            select d_manager.email, from: 'enterprise_set_collection_attributes_1_owner_id'
+            select d_manager.email, from: "enterprise_set_collection_attributes_#{second_distributor_row_index}_owner_id"
           end
           click_button "Update"
-          flash_message.should == 'Update failed'
+          expect(flash_message).to eq('Update failed')
           expect(page).to have_content "#{d_manager.email} is not permitted to own any more enterprises (limit is 1)."
           second_distributor.reload
           expect(second_distributor.owner).to_not eq d_manager
@@ -136,7 +144,6 @@ feature 'Enterprises Index' do
 
         expect(find("#content-header")).to have_link "New Enterprise"
       end
-
 
       it "does not give me an option to change or update the package and producer properties of enterprises I manage" do
         visit admin_enterprises_path

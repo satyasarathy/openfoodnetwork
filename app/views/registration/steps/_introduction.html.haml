@@ -2,35 +2,40 @@
   .row
     .small-12.columns
       %header
-        %h2 {{'registration_greeting' | t}}
+        %h2= t(".registration_greeting")
         %h4
           %small
             %i.ofn-i_040-hub
-          {{'registration_intro' | t}}
+          = t(".registration_intro")
 
-  .row{ 'data-equalizer' => true }
+  .row.collapsible-menus-container{ 'data-equalizer' => true }
     .small-12.medium-12.large-6.columns.pad-top{ 'data-equalizer-watch' => true }
-      %h5 {{'registration_checklist' | t}}:
-      %ul.check-list
-        %li
-          {{'registration_time' | t}}
-        %li
-          {{'registration_enterprise_address' | t}}
-        %li
-          {{'registration_contact_details' | t}}
-        %li
-          {{'registration_logo' | t}}
-        %li
-          {{'registration_promo_image' | t}}
-        %li
-          {{'registration_about_us' | t}}
+      %input#collapsible-registration-checklist.collapsible-checkbox{:type => "checkbox"}
+      %label.collapsible-label.collapsible-label-md{:for => "collapsible-registration-checklist"}
+        %h5= t(".registration_checklist")
+      .collapsible-content.collapsible-content-md
+        %ul.check-list
+          %li
+            = t(".registration_time")
+          %li
+            = t(".registration_enterprise_address")
+          %li
+            = t(".registration_contact_details")
+          %li
+            = t(".registration_logo")
+          %li
+            = t(".registration_promo_image")
+          %li
+            = t(".registration_about_us")
 
     .small-9.medium-8.large-5.columns.pad-top.end{ 'data-equalizer-watch' => true}
-      %h5
-        {{'registration_outcome_headline' | t}}
-      %p{ "ng-bind-html" => "t('registration_outcome1_html')" }
-      %p {{'registration_outcome2' | t}}
-      %p {{'registration_outcome3' | t}}
+      %input#collapsible-registration-outcome.collapsible-checkbox{:type => "checkbox"}
+      %label.collapsible-label.collapsible-label-md{:for => "collapsible-registration-outcome"}
+        %h5= t(".registration_outcome_headline")
+      .collapsible-content.collapsible-content-md
+        %p= t(".registration_outcome1_html")
+        %p= t(".registration_outcome2")
+        %p= t(".registration_outcome3")
 
   .row{'ng-init' => "tos_required=#{Spree::Config.enterprises_require_tos}" }
     %hr
@@ -43,4 +48,4 @@
           %label{for: "accept_terms"} #{t(:enterprise_tos_agree)}
 
     .small-12.medium-6.columns
-      %input.button.primary.left{ type: "button", value: "{{'registration_action' | t}}", ng: { click: "select('details')", disabled: "tos_required && !tos_accepted", model: "tos_accepted"} }
+      %input.button.primary.left{ type: "button", value: "{{'registration.steps.introduction.registration_action' | t}}", ng: { click: "select('details')", disabled: "tos_required && !tos_accepted", model: "tos_accepted"} }

@@ -6,6 +6,7 @@ module Stripe
 
     def handle
       return :unknown unless known_event?
+
       __send__(event_mappings[@event.type])
     end
 
@@ -18,11 +19,12 @@ module Stripe
     end
 
     def known_event?
-      event_mappings.keys.include? @event.type
+      event_mappings.key?(@event.type)
     end
 
     def deauthorize
       return :ignored unless @event.respond_to?(:account)
+
       destroyed = destroy_stripe_accounts_linked_to(@event.account)
       destroyed.any? ? :success : :ignored
     end

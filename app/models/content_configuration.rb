@@ -12,11 +12,14 @@ class ContentConfiguration < Spree::Preferences::FileConfiguration
   has_attached_file :logo_mobile_svg, default_url: "/assets/ofn-logo-mobile.svg"
 
   # Home page
+  preference :home_page_alert_html, :text
   preference :home_hero, :file
   preference :home_show_stats, :boolean, default: true
   has_attached_file :home_hero, default_url: "/assets/home/home.jpg"
 
   # Producer sign-up page
+  # All the following defaults using I18n don't work.
+  # https://github.com/openfoodfoundation/openfoodnetwork/issues/3816
   preference :producer_signup_pricing_table_html, :text, default: I18n.t(:content_configuration_pricing_table)
   preference :producer_signup_case_studies_html, :text, default: I18n.t(:content_configuration_case_studies)
   preference :producer_signup_detail_html, :text, default: I18n.t(:content_configuration_detail)
@@ -51,11 +54,11 @@ class ContentConfiguration < Spree::Preferences::FileConfiguration
   preference :footer_logo, :file
   has_attached_file :footer_logo, default_url: "/assets/ofn-logo-footer.png"
 
-  #Other
+  # Other
   preference :footer_facebook_url, :string, default: "https://www.facebook.com/OpenFoodNet"
   preference :footer_twitter_url, :string, default: "https://twitter.com/OpenFoodNet"
-  preference :footer_instagram_url, :string, default: ""
-  preference :footer_linkedin_url, :string, default: "http://www.linkedin.com/groups/Open-Food-Foundation-4743336"
+  preference :footer_instagram_url, :string, default: "https://www.instagram.com/openfoodnetworkuk/"
+  preference :footer_linkedin_url, :string, default: "https://www.linkedin.com/company/openfoodnetwork/"
   preference :footer_googleplus_url, :string, default: ""
   preference :footer_pinterest_url, :string, default: ""
   preference :footer_email, :string, default: "hello@openfoodnetwork.org"
@@ -66,10 +69,10 @@ class ContentConfiguration < Spree::Preferences::FileConfiguration
     [News](/)
 
     [Calendar](/)
-EOS
+  EOS
 
   preference :footer_about_url, :string, default: "http://www.openfoodnetwork.org/ofn-local/open-food-network-australia/"
 
-  #User Guide
+  # User Guide
   preference :user_guide_link, :string, default: 'https://guide.openfoodnetwork.org/'
 end

@@ -1,9 +1,9 @@
 require "spec_helper"
 
-feature %q{
+feature '
     As a Super Admin
     I want to be able to set a distributor on each payment method
-} do
+' do
   include AuthenticationWorkflow
   include WebHelper
 
@@ -19,15 +19,15 @@ feature %q{
       click_link 'Payment Methods'
       click_link 'New Payment Method'
 
-      fill_in 'payment_method_name', :with => 'Cheque payment method'
+      fill_in 'payment_method_name', with: 'Cheque payment method'
 
       check "payment_method_distributor_ids_#{@distributors[0].id}"
       click_button 'Create'
 
-      flash_message.should == 'Payment Method has been successfully created!'
+      expect(flash_message).to eq('Payment Method has been successfully created!')
 
       payment_method = Spree::PaymentMethod.find_by_name('Cheque payment method')
-      payment_method.distributors.should == [@distributors[0]]
+      expect(payment_method.distributors).to eq([@distributors[0]])
     end
 
     context "using stripe connect" do
@@ -67,15 +67,30 @@ feature %q{
         expect(page).to have_selector "#stripe-account-status .charges_enabled", text: "Charges Enabled: Yes"
       end
     end
+
+    scenario "checking a single distributor is checked by default" do
+      2.times.each { Enterprise.last.destroy }
+      quick_login_as_admin
+      visit spree.new_admin_payment_method_path
+      expect(page).to have_field "payment_method_distributor_ids_#{@distributors[0].id}", checked: true
+    end
+
+    scenario "checking more than a distributor displays no default choice" do
+      quick_login_as_admin
+      visit spree.new_admin_payment_method_path
+      expect(page).to have_field "payment_method_distributor_ids_#{@distributors[0].id}", checked: false
+      expect(page).to have_field "payment_method_distributor_ids_#{@distributors[1].id}", checked: false
+      expect(page).to have_field "payment_method_distributor_ids_#{@distributors[2].id}", checked: false
+    end
   end
 
   scenario "updating a payment method", js: true do
-    pm = create(:payment_method, distributors: [@distributors[0]])
+    payment_method = create(:payment_method, distributors: [@distributors[0]])
     quick_login_as_admin
 
-    visit spree.edit_admin_payment_method_path pm
+    visit spree.edit_admin_payment_method_path payment_method
 
-    fill_in 'payment_method_name', :with => 'New PM Name'
+    fill_in 'payment_method_name', with: 'New PM Name'
     find(:css, "tags-input .tags input").set "member\n"
 
     uncheck "payment_method_distributor_ids_#{@distributors[0].id}"
@@ -120,9 +135,9 @@ feature %q{
     let(:distributor1) { create(:distributor_enterprise, name: 'First Distributor') }
     let(:distributor2) { create(:distributor_enterprise, name: 'Second Distributor') }
     let(:distributor3) { create(:distributor_enterprise, name: 'Third Distributor') }
-    let(:pm1) { create(:payment_method, name: 'One', distributors: [distributor1]) }
-    let(:pm2) { create(:payment_method, name: 'Two', distributors: [distributor1, distributor2]) }
-    let(:pm3) { create(:payment_method, name: 'Three', distributors: [distributor3]) }
+    let(:payment_method1) { create(:payment_method, name: 'One', distributors: [distributor1]) }
+    let(:payment_method2) { create(:payment_method, name: 'Two', distributors: [distributor1, distributor2]) }
+    let(:payment_method3) { create(:payment_method, name: 'Three', distributors: [distributor3]) }
 
     before(:each) do
       enterprise_user.enterprise_roles.build(enterprise: distributor1).save
@@ -142,43 +157,43 @@ feature %q{
 
     it "creates payment methods" do
       visit spree.new_admin_payment_method_path
-      fill_in 'payment_method_name', :with => 'Cheque payment method'
+      fill_in 'payment_method_name', with: 'Cheque payment method'
 
       check "payment_method_distributor_ids_#{distributor1.id}"
       find(:css, "tags-input .tags input").set "local\n"
       click_button 'Create'
 
-      flash_message.should == 'Payment Method has been successfully created!'
+      expect(flash_message).to eq('Payment Method has been successfully created!')
       expect(first('tags-input .tag-list ti-tag-item')).to have_content "local"
 
       payment_method = Spree::PaymentMethod.find_by_name('Cheque payment method')
-      payment_method.distributors.should == [distributor1]
-      payment_method.tag_list.should == ["local"]
+      expect(payment_method.distributors).to eq([distributor1])
+      expect(payment_method.tag_list).to eq(["local"])
     end
 
     it "shows me only payment methods I have access to" do
-      pm1
-      pm2
-      pm3
+      payment_method1
+      payment_method2
+      payment_method3
 
       visit spree.admin_payment_methods_path
 
-      page.should     have_content pm1.name
-      page.should     have_content pm2.name
-      page.should_not have_content pm3.name
+      expect(page).to     have_content payment_method1.name
+      expect(page).to     have_content payment_method2.name
+      expect(page).not_to have_content payment_method3.name
     end
 
     it "does not show duplicates of payment methods" do
-      pm1
-      pm2
+      payment_method1
+      payment_method2
 
       visit spree.admin_payment_methods_path
-      page.should have_selector 'td', text: 'Two', count: 1
+      expect(page).to have_selector 'td', text: 'Two', count: 1
     end
 
     pending "shows me only payment methods for the enterprise I select" do
-      pm1
-      pm2
+      payment_method1
+      payment_method2
 
       visit admin_enterprises_path
       within("#e_#{distributor1.id}") { click_link 'Settings' }
@@ -186,8 +201,8 @@ feature %q{
         click_link "Payment Methods"
       end
 
-      page.should     have_content pm1.name
-      page.should     have_content pm2.name
+      expect(page).to     have_content payment_method1.name
+      expect(page).to     have_content payment_method2.name
 
       click_link 'Enterprises'
       within("#e_#{distributor2.id}") { click_link 'Settings' }
@@ -195,8 +210,8 @@ feature %q{
         click_link "Payment Methods"
       end
 
-      page.should_not have_content pm1.name
-      page.should     have_content pm2.name
+      expect(page).not_to have_content payment_method1.name
+      expect(page).to     have_content payment_method2.name
     end
   end
 end

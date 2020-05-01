@@ -1,7 +1,7 @@
 require 'spec_helper'
 
 describe RestartCheckout do
-  let(:order) { create(:order) }
+  let(:order) { create(:order_with_distributor) }
 
   describe "#call" do
     context "when the order is already in the 'cart' state" do
@@ -12,23 +12,53 @@ describe RestartCheckout do
     end
 
     context "when the order is in a subsequent state" do
+      # 'pending' is the only shipment state possible for incomplete orders
       let!(:shipment_pending) { create(:shipment, order: order, state: 'pending') }
-      let!(:payment_checkout) { create(:payment, order: order, state: 'checkout') }
       let!(:payment_failed) { create(:payment, order: order, state: 'failed') }
+      let!(:payment_checkout) { create(:payment, order: order, state: 'checkout') }
 
       before do
-        order.shipping_method_id = shipment_pending.shipping_method_id
         order.update_attribute(:state, "payment")
       end
 
-      # NOTE: at the time of writing, it was not possible to create a shipment
-      # with a state other than 'pending' when the order has not been
-      # completed, so this is not a case that requires testing.
-      it "resets the order state, and clears incomplete shipments and payments" do
-        RestartCheckout.new(order).call
+      context "when order ship address is nil" do
+        before { order.ship_address = nil }
 
+        it "resets the order state, and clears incomplete shipments and payments" do
+          RestartCheckout.new(order).call
+
+          expect_cart_state_and_reset_adjustments
+        end
+      end
+
+      context "when order ship address is not empty" do
+        before { order.ship_address = order.address_from_distributor }
+
+        it "resets the order state, and clears incomplete shipments and payments" do
+          RestartCheckout.new(order).call
+
+          expect_cart_state_and_reset_adjustments
+        end
+      end
+
+      context "when order ship address is empty" do
+        before { order.ship_address = Spree::Address.default }
+
+        it "does not reset the order state nor clears incomplete shipments and payments" do
+          expect do
+            RestartCheckout.new(order).call
+          end.to raise_error(StateMachine::InvalidTransition)
+
+          expect(order.state).to eq 'payment'
+          expect(order.shipments.count).to eq 1
+          expect(order.adjustments.shipping.count).to eq 0
+          expect(order.payments.count).to eq 2
+          expect(order.adjustments.payment_fee.count).to eq 2
+        end
+      end
+
+      def expect_cart_state_and_reset_adjustments
         expect(order.state).to eq 'cart'
-        expect(order.shipping_method_id).to eq nil
         expect(order.shipments.count).to eq 0
         expect(order.adjustments.shipping.count).to eq 0
         expect(order.payments.count).to eq 1

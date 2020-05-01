@@ -1,5 +1,5 @@
 module Api
-  class EnterpriseAttachmentController < BaseController
+  class EnterpriseAttachmentController < Api::BaseController
     class MissingImplementationError < StandardError; end
     class UnknownEnterpriseAuthorizationActionError < StandardError; end
 
@@ -27,6 +27,7 @@ module Api
     def load_enterprise
       @enterprise = Enterprise.find_by_permalink(params[:enterprise_id].to_s)
       raise UnknownEnterpriseAuthorizationActionError if enterprise_authorize_action.blank?
+
       authorize!(enterprise_authorize_action, @enterprise)
     end
 

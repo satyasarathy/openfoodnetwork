@@ -10,6 +10,87 @@ feature "Managing users" do
       quick_login_as_admin
     end
 
+    context "from the index page" do
+      before do
+        create(:user, email: "a@example.com")
+        create(:user, email: "b@example.com")
+
+        visit spree.admin_dashboard_path
+        click_link "Users"
+      end
+
+      context "users index page with sorting" do
+        before(:each) do
+          click_link "users_email_title"
+        end
+
+        it "should list users with order email asc" do
+          expect(page).to have_css('table#listing_users')
+          within("table#listing_users") do
+            expect(page).to have_content("a@example.com")
+            expect(page).to have_content("b@example.com")
+          end
+        end
+
+        it "should list users with order email desc" do
+          click_link "users_email_title"
+          within("table#listing_users") do
+            expect(page).to have_content("a@example.com")
+            expect(page).to have_content("b@example.com")
+          end
+        end
+      end
+
+      context "searching users" do
+        it "should display the correct results for a user search" do
+          fill_in "q_email_cont", with: "a@example"
+          click_button "Search"
+          within("table#listing_users") do
+            expect(page).to have_content("a@example")
+            expect(page).not_to have_content("b@example")
+          end
+        end
+      end
+
+      context "editing users" do
+        before(:each) do
+          click_link("a@example.com")
+        end
+
+        it "should allow editing the user password" do
+          fill_in "user_password", with: "welcome"
+          fill_in "user_password_confirmation", with: "welcome"
+          click_button "Update"
+
+          expect(page).to have_content("Account updated")
+        end
+
+        it "should let me edit the user email" do
+          fill_in "Email", with: "newemail@example.org"
+          click_button "Update"
+
+          expect(page).to have_content("The account will be updated once the new email is confirmed.")
+        end
+
+        it "should allow to generate, regenarate and clear the user api key", js: true do
+          user = Spree::User.find_by_email("a@example.com")
+          expect(page).to have_content "NO KEY"
+
+          click_button "Generate API key"
+          first_user_api_key = user.reload.spree_api_key
+          expect(page).to have_content first_user_api_key
+
+          click_button "Regenerate Key"
+          second_user_api_key = user.reload.spree_api_key
+          expect(page).to have_content second_user_api_key
+          expect(second_user_api_key).not_to eq first_user_api_key
+
+          click_button "Clear key"
+          expect(page).to have_content "NO KEY"
+        end
+      end
+    end
+
     describe "creating a user" do
       it "shows no confirmation message to start with" do
         visit spree.new_admin_user_path
@@ -31,6 +112,10 @@ feature "Managing users" do
 
     describe "resending confirmation email", js: true do
       let(:user) { create :user, confirmed_at: nil }
+
+      around do |example|
+        performing_deliveries { example.run }
+      end
 
       it "displays success" do
         visit spree.edit_admin_user_path user

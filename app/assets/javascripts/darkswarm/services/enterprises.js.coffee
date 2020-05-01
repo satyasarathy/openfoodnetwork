@@ -1,29 +1,33 @@
-Darkswarm.factory 'Enterprises', (enterprises, CurrentHub, Taxons, Dereferencer, visibleFilter, Matcher, Geo, $rootScope) ->
+Darkswarm.factory 'Enterprises', (enterprises, ShopsResource, CurrentHub, Taxons, Dereferencer, Matcher, Geo, $rootScope) ->
   new class Enterprises
+    enterprises: []
     enterprises_by_id: {}
+
     constructor: ->
       # Populate Enterprises.enterprises from json in page.
-      @enterprises = enterprises
+      @initEnterprises(enterprises)
+
+    initEnterprises: (enterprises) ->
       # Map enterprises to id/object pairs for lookup.
       for enterprise in enterprises
+        @enterprises.push enterprise
         @enterprises_by_id[enterprise.id] = enterprise
+
       # Replace enterprise and taxons ids with actual objects.
-      @dereferenceEnterprises()
-      @visible_enterprises = visibleFilter @enterprises
-      @producers = @visible_enterprises.filter (enterprise)->
+      @dereferenceEnterprises(enterprises)
+
+      @producers = @enterprises.filter (enterprise)->
         enterprise.category in ["producer_hub", "producer_shop", "producer"]
-      @hubs = @visible_enterprises.filter (enterprise)->
+      @hubs = @enterprises.filter (enterprise)->
         enterprise.category in ["hub", "hub_profile", "producer_hub", "producer_shop"]
 
-    dereferenceEnterprises: ->
+    dereferenceEnterprises: (enteprises) ->
       if CurrentHub.hub?.id
         CurrentHub.hub = @enterprises_by_id[CurrentHub.hub.id]
-      for enterprise in @enterprises
+      for enterprise in enterprises
         @dereferenceEnterprise enterprise
 
     dereferenceEnterprise: (enterprise) ->
-      @dereferenceProperty(enterprise, 'hubs', @enterprises_by_id)
-      @dereferenceProperty(enterprise, 'producers', @enterprises_by_id)
       @dereferenceProperty(enterprise, 'taxons', Taxons.taxons_by_id)
       @dereferenceProperty(enterprise, 'supplied_taxons', Taxons.taxons_by_id)
 
@@ -41,6 +45,12 @@ Darkswarm.factory 'Enterprises', (enterprises, CurrentHub, Taxons, Dereferencer,
       for enterprise in new_enterprises
         @enterprises_by_id[enterprise.id] = enterprise
 
+    loadClosedEnterprises: ->
+      request = ShopsResource.closed_shops {}, (data) =>
+        @initEnterprises(data)
+
+      request.$promise
+
     flagMatching: (query) ->
       for enterprise in @enterprises
         enterprise.matches_name_query = if query? && query.length > 0
@@ -49,7 +59,7 @@ Darkswarm.factory 'Enterprises', (enterprises, CurrentHub, Taxons, Dereferencer,
           false
 
     calculateDistance: (query, firstMatching) ->
-      if query?.length > 0
+      if query?.length > 0 and Geo.OK
         if firstMatching?
           @setDistanceFrom firstMatching
         else

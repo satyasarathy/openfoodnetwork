@@ -1,10 +1,11 @@
 require 'spec_helper'
 
-feature %q{
+feature '
     As a consumer
     I want to see a list of producers
     So that I can shop at hubs distributing their products
-}, js: true do
+', js: true do
+  include AuthenticationWorkflow
   include WebHelper
   include UIComponentHelper
 
@@ -21,6 +22,10 @@ feature %q{
   let(:shop) { create(:distributor_enterprise) }
   let!(:er) { create(:enterprise_relationship, parent: shop, child: producer1) }
 
+  before :each do
+    use_api_as_unauthenticated_user
+  end
+
   before do
     product1.set_property 'Organic', 'NASAA 12345'
     product2.set_property 'Biodynamic', 'ABC123'
@@ -28,7 +33,6 @@ feature %q{
     producer1.set_producer_property 'Local', 'Victoria'
     producer2.set_producer_property 'Fair Trade', 'FT123'
   end
-
 
   it "searches by URL" do
     visit producers_path(anchor: "/?query=xyzzy")
@@ -45,14 +49,14 @@ feature %q{
 
       toggle_filter 'Vegetables'
 
-      page.should_not have_content producer1.name
-      page.should     have_content producer2.name
+      expect(page).not_to have_content producer1.name
+      expect(page).to     have_content producer2.name
 
       toggle_filter 'Vegetables'
       toggle_filter 'Fruit'
 
-      page.should     have_content producer1.name
-      page.should_not have_content producer2.name
+      expect(page).to     have_content producer1.name
+      expect(page).not_to have_content producer2.name
     end
 
     describe "filtering by product property" do
@@ -61,36 +65,36 @@ feature %q{
 
         toggle_filter 'Organic'
 
-        page.should     have_content producer1.name
-        page.should_not have_content producer2.name
+        expect(page).to     have_content producer1.name
+        expect(page).not_to have_content producer2.name
 
         toggle_filter 'Organic'
         toggle_filter 'Biodynamic'
 
-        page.should_not have_content producer1.name
-        page.should     have_content producer2.name
+        expect(page).not_to have_content producer1.name
+        expect(page).to     have_content producer2.name
       end
     end
 
     it "shows all producers with expandable details" do
-      page.should have_content producer1.name
+      expect(page).to have_content producer1.name
       expand_active_table_node producer1.name
 
       # -- Taxons
-      page.should have_content 'Fruit'
+      expect(page).to have_content 'Fruit'
 
       # -- Properties
-      page.should have_content 'Organic' # Product property
-      page.should have_content 'Local'   # Producer property
+      expect(page).to have_content 'Organic' # Product property
+      expect(page).to have_content 'Local'   # Producer property
     end
 
     it "doesn't show invisible producers" do
-      page.should_not have_content invisible_producer.name
+      expect(page).not_to have_content invisible_producer.name
     end
 
     it "links to places to buy produce" do
       expand_active_table_node producer1.name
-      page.should have_link shop.name
+      expect(page).to have_link shop.name
     end
   end
 end

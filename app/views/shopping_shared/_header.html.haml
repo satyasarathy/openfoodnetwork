@@ -1,0 +1,13 @@
+- distributor = @order.andand.distributor || current_distributor
+
+%navigation
+  %distributor.details.row
+    .small-12.medium-12.large-8.columns
+      #distributor_title
+        - if distributor.logo?
+          %img.left{src: distributor.logo.url(:thumb)}
+        %h3
+          = distributor.name
+        %location= distributor.address.city
+
+    = yield :ordercycle_sidebar

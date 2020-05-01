@@ -1,0 +1,37 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:9.5
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: f00d
+      POSTGRES_USER: ofn
+      POSTGRES_DB: open_food_network_dev
+    volumes:
+      - 'postgres:/var/lib/postgresql/data'
+  web:
+    tty: true
+    stdin_open: true
+    build: .
+    ports:
+      - 3000:3000
+    volumes:
+      - .:/usr/src/app
+      - gems:/bundles
+      - ./config/database.yml:/usr/src/app/config/database.yml
+      - ./config/application.yml.example:/usr/src/app/config/application.yml
+    depends_on:
+      - db
+    environment:
+      ADMIN_EMAIL: ofn@example.com
+      ADMIN_PASSWORD: ofn123
+      OFN_DB_HOST: db
+    command: >
+      bash -c "wait-for-it -t 30 db:5432 &&
+               rm -f tmp/pids/server.pid &&
+               bundle exec rails s -p 3000 -b '0.0.0.0'"
+
+volumes:
+  gems:
+  postgres:

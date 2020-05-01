@@ -1,20 +1,20 @@
 require 'spec_helper'
 
-feature %q{
+feature '
   As an Administrator
   I want to be able to manage orders in bulk
-} , js: true do
+', js: true do
   include AdminHelper
   include AuthenticationWorkflow
   include WebHelper
 
   context "listing orders" do
     before :each do
-      login_to_admin_section
+      quick_login_as_admin
     end
 
     it "displays a message when number of line items is zero" do
-      visit '/admin/orders/bulk_management'
+      visit_bulk_order_management
       expect(page).to have_text 'No orders found.'
     end
 
@@ -22,12 +22,12 @@ feature %q{
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o3) { create(:order_with_distributor, state: 'address', completed_at: nil ) }
-      let!(:li1) { create(:line_item, order: o1 ) }
-      let!(:li2) { create(:line_item, order: o2 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2) }
       let!(:li3) { create(:line_item, order: o3 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
       end
 
       it "displays a list of line items" do
@@ -40,17 +40,17 @@ feature %q{
     context "displaying individual columns" do
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, bill_address: create(:address) ) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, bill_address: nil ) }
-      let!(:li1) { create(:line_item, order: o1 ) }
-      let!(:li2) { create(:line_item, order: o2, product: create(:product_with_option_types) ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2, product: create(:product_with_option_types) ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
       end
 
       it "displays a column for user's full name" do
-        expect(page).to have_selector "th.full_name", text: "NAME", :visible => true
-        expect(page).to have_selector "td.full_name", text: o1.bill_address.full_name, :visible => true
-        expect(page).to have_selector "td.full_name", text: "", :visible => true
+        expect(page).to have_selector "th.full_name", text: "NAME", visible: true
+        expect(page).to have_selector "td.full_name", text: o1.bill_address.full_name, visible: true
+        expect(page).to have_selector "td.full_name", text: "", visible: true
       end
 
       it "displays a column for order date" do
@@ -60,38 +60,38 @@ feature %q{
       end
 
       it "displays a column for producer" do
-        expect(page).to have_selector "th.producer", text: "PRODUCER", :visible => true
-        expect(page).to have_selector "td.producer", text: li1.product.supplier.name, :visible => true
-        expect(page).to have_selector "td.producer", text: li2.product.supplier.name, :visible => true
+        expect(page).to have_selector "th.producer", text: "PRODUCER", visible: true
+        expect(page).to have_selector "td.producer", text: li1.product.supplier.name, visible: true
+        expect(page).to have_selector "td.producer", text: li2.product.supplier.name, visible: true
       end
 
       it "displays a column for variant description, which shows only product name when options text is blank" do
-        expect(page).to have_selector "th.variant", text: "PRODUCT: UNIT", :visible => true
-        expect(page).to have_selector "td.variant", text: li1.product.name, :visible => true
-        expect(page).to have_selector "td.variant", text: (li2.product.name + ": " + li2.variant.options_text), :visible => true
+        expect(page).to have_selector "th.variant", text: "PRODUCT: UNIT", visible: true
+        expect(page).to have_selector "td.variant", text: li1.product.name, visible: true
+        expect(page).to have_selector "td.variant", text: (li2.product.name + ": " + li2.variant.options_text), visible: true
       end
 
       it "displays a field for quantity" do
-        expect(page).to have_selector "th.quantity", text: "QUANTITY", :visible => true
-        expect(page).to have_field "quantity", with: li1.quantity.to_s, :visible => true
-        expect(page).to have_field "quantity", with: li2.quantity.to_s, :visible => true
+        expect(page).to have_selector "th.quantity", text: "QUANTITY", visible: true
+        expect(page).to have_field "quantity", with: li1.quantity.to_s, visible: true
+        expect(page).to have_field "quantity", with: li2.quantity.to_s, visible: true
       end
 
       it "displays a column for max quantity" do
-        expect(page).to have_selector "th.max", text: "MAX", :visible => true
-        expect(page).to have_selector "td.max", text: li1.max_quantity.to_s, :visible => true
-        expect(page).to have_selector "td.max", text: li2.max_quantity.to_s, :visible => true
+        expect(page).to have_selector "th.max", text: "MAX", visible: true
+        expect(page).to have_selector "td.max", text: li1.max_quantity.to_s, visible: true
+        expect(page).to have_selector "td.max", text: li2.max_quantity.to_s, visible: true
       end
     end
 
     describe "sorting of line items" do
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now) }
-      let!(:li1) { create(:line_item, order: o1) }
-      let!(:li2) { create(:line_item, order: o2) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2) }
 
       before do
-        visit spree.admin_bulk_order_management_path
+        visit_bulk_order_management
       end
 
       it "sorts by customer name when the customer name header is clicked" do
@@ -121,37 +121,36 @@ feature %q{
 
   context "altering line item properties" do
     before :each do
-      admin_user = quick_login_as_admin
+      quick_login_as_admin
     end
 
     context "tracking changes" do
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li1) { create(:line_item, order: o1, :quantity => 5 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1, quantity: 5 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
       end
 
       it "adds the class 'ng-dirty' to input elements when value is altered" do
         expect(page).to have_no_css "input[name='quantity'].ng-dirty"
-        fill_in "quantity", :with => 2
+        fill_in "quantity", with: 2
         expect(page).to have_css "input[name='quantity'].ng-dirty"
       end
     end
 
     context "submitting data to the server" do
-      let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li1) { create(:line_item, order: o1, :quantity => 5 ) }
+      let!(:order) { create(:completed_order_with_fees) }
 
       before :each do
-        li1.variant.update_attributes(on_hand: 1, on_demand: false)
-        visit '/admin/orders/bulk_management'
+        order.line_items.second.destroy # we keep only one line item for this test
+        visit_bulk_order_management
       end
 
       context "when acceptable data is sent to the server" do
         it "displays an update button which submits pending changes" do
           expect(page).to have_no_selector "#save-bar"
-          fill_in "quantity", :with => 2
+          fill_in "quantity", with: 2
           expect(page).to have_selector "input[name='quantity'].ng-dirty"
           expect(page).to have_selector "#save-bar", text: "You have unsaved changes"
           click_button "Save Changes"
@@ -163,13 +162,14 @@ feature %q{
       context "when unacceptable data is sent to the server" do
         it "displays an update button which submits pending changes" do
           expect(page).to have_no_selector "#save-bar"
-          fill_in "quantity", :with => li1.variant.on_hand + li1.quantity + 10
+          line_item = order.line_items.first
+          fill_in "quantity", with: line_item.variant.on_hand + line_item.quantity + 10
           expect(page).to have_selector "input[name='quantity'].ng-dirty"
           expect(page).to have_selector "#save-bar", text: "You have unsaved changes"
           click_button "Save Changes"
           expect(page).to have_selector "#save-bar", text: "Fields with red borders contain errors."
           expect(page).to have_selector "input[name='quantity'].ng-dirty.update-error"
-          expect(page).to have_content "exceeds available stock. Please ensure line items have a valid quantity."
+          expect(page).to have_content "is out of stock"
         end
       end
     end
@@ -177,23 +177,23 @@ feature %q{
 
   context "using page controls" do
     before :each do
-      admin_user = quick_login_as_admin
+      quick_login_as_admin
     end
 
     let!(:p1) { create(:product_with_option_types, group_buy: true, group_buy_unit_size: 5000, variant_unit: "weight", variants: [create(:variant, unit_value: 1000)] ) }
     let!(:v1) { p1.variants.first }
     let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-    let!(:li1) { create(:line_item, order: o1, variant: v1, :quantity => 5, :final_weight_volume => 1000, price: 10.00 ) }
+    let!(:li1) { create(:line_item_with_shipment, order: o1, variant: v1, quantity: 5, final_weight_volume: 1000, price: 10.00 ) }
 
-    before { v1.update_attribute(:on_hand, 100)}
+    before { v1.update_attribute(:on_hand, 100) }
 
     context "modifying the weight/volume of a line item" do
       it "price is altered" do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
         toggle_columns "Weight/Volume", "Price"
         within "tr#li_#{li1.id}" do
           expect(page).to have_field "price", with: "50.00"
-          fill_in "final_weight_volume", :with => 2000
+          fill_in "final_weight_volume", with: 2000
           expect(page).to have_field "price", with: "100.00"
         end
         click_button "Save Changes"
@@ -206,47 +206,47 @@ feature %q{
 
     context "modifying the quantity of a line item" do
       it "price is altered" do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
         toggle_columns "Price"
         within "tr#li_#{li1.id}" do
-          expect(page).to have_field "price", with: "#{format("%.2f",li1.price * 5)}"
-          fill_in "quantity", :with => 6
-          expect(page).to have_field "price", with: "#{format("%.2f",li1.price * 6)}"
+          expect(page).to have_field "price", with: format('%.2f', li1.price * 5).to_s
+          fill_in "quantity", with: 6
+          expect(page).to have_field "price", with: format('%.2f', li1.price * 6).to_s
         end
       end
     end
 
     context "modifying the quantity of a line item" do
       it "weight/volume is altered" do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
         toggle_columns "Weight/Volume"
         within "tr#li_#{li1.id}" do
-          expect(page).to have_field "final_weight_volume", with: "#{li1.final_weight_volume.round}"
-          fill_in "quantity", :with => 6
-          expect(page).to have_field "final_weight_volume", with: "#{((li1.final_weight_volume*6)/5).round}"
+          expect(page).to have_field "final_weight_volume", with: li1.final_weight_volume.round.to_s
+          fill_in "quantity", with: 6
+          expect(page).to have_field "final_weight_volume", with: ((li1.final_weight_volume * 6) / 5).round.to_s
         end
       end
     end
 
     context "using column display toggle" do
       it "shows a column display toggle button, which shows a list of columns when clicked" do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
 
-        expect(page).to have_selector "th", :text => "NAME"
+        expect(page).to have_selector "th", text: "NAME"
         expect(page).to have_selector "th", text: I18n.t("admin.orders.bulk_management.order_date").upcase
-        expect(page).to have_selector "th", :text => "PRODUCER"
-        expect(page).to have_selector "th", :text => "PRODUCT: UNIT"
-        expect(page).to have_selector "th", :text => "QUANTITY"
-        expect(page).to have_selector "th", :text => "MAX"
+        expect(page).to have_selector "th", text: "PRODUCER"
+        expect(page).to have_selector "th", text: "PRODUCT: UNIT"
+        expect(page).to have_selector "th", text: "QUANTITY"
+        expect(page).to have_selector "th", text: "MAX"
 
         toggle_columns "Producer"
 
-        expect(page).to have_no_selector "th", :text => "PRODUCER"
-        expect(page).to have_selector "th", :text => "NAME"
+        expect(page).to have_no_selector "th", text: "PRODUCER"
+        expect(page).to have_selector "th", text: "NAME"
         expect(page).to have_selector "th", text: I18n.t("admin.orders.bulk_management.order_date").upcase
-        expect(page).to have_selector "th", :text => "PRODUCT: UNIT"
-        expect(page).to have_selector "th", :text => "QUANTITY"
-        expect(page).to have_selector "th", :text => "MAX"
+        expect(page).to have_selector "th", text: "PRODUCT: UNIT"
+        expect(page).to have_selector "th", text: "QUANTITY"
+        expect(page).to have_selector "th", text: "MAX"
       end
     end
 
@@ -255,11 +255,11 @@ feature %q{
         let!(:s1) { create(:supplier_enterprise) }
         let!(:s2) { create(:supplier_enterprise) }
         let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, order_cycle: create(:simple_order_cycle) ) }
-        let!(:li1) { create(:line_item, order: o1, product: create(:product, supplier: s1) ) }
-        let!(:li2) { create(:line_item, order: o1, product: create(:product, supplier: s2) ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1, product: create(:product, supplier: s1) ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o1, product: create(:product, supplier: s2) ) }
 
         before :each do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "displays a select box for producers, which filters line items by the selected supplier" do
@@ -293,11 +293,11 @@ feature %q{
         let!(:d2) { create(:distributor_enterprise) }
         let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d1, order_cycle: create(:simple_order_cycle) ) }
         let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d2, order_cycle: create(:simple_order_cycle) ) }
-        let!(:li1) { create(:line_item, order: o1 ) }
-        let!(:li2) { create(:line_item, order: o2 ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
         before :each do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "displays a select box for distributors, which filters line items by the selected distributor" do
@@ -315,10 +315,8 @@ feature %q{
         end
 
         it "displays all line items when 'All' is selected from distributor filter" do
-          expect(page).to have_selector "tr#li_#{li1.id}"
           expect(page).to have_selector "tr#li_#{li2.id}"
           select2_select d1.name, from: "distributor_filter"
-          expect(page).to have_selector "tr#li_#{li1.id}"
           expect(page).to have_no_selector "tr#li_#{li2.id}"
           select2_select "All", from: "distributor_filter"
           expect(page).to have_selector "tr#li_#{li1.id}"
@@ -332,11 +330,11 @@ feature %q{
         let!(:oc2) { create(:simple_order_cycle, distributors: [distributor]) }
         let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, order_cycle: oc1 ) }
         let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, order_cycle: oc2 ) }
-        let!(:li1) { create(:line_item, order: o1 ) }
-        let!(:li2) { create(:line_item, order: o2 ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
         before do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "displays a select box for order cycles, which filters line items by the selected order cycle" do
@@ -372,11 +370,11 @@ feature %q{
         let!(:p2) { create(:product, supplier: s2) }
         let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d1, order_cycle: oc1 ) }
         let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d2, order_cycle: oc2 ) }
-        let!(:li1) { create(:line_item, order: o1, product: p1 ) }
-        let!(:li2) { create(:line_item, order: o2, product: p2 ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1, product: p1 ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o2, product: p2 ) }
 
         before :each do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "allows filters to be used in combination" do
@@ -421,25 +419,21 @@ feature %q{
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o3) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li1) { create(:line_item, order: o1 ) }
-      let!(:li2) { create(:line_item, order: o2 ) }
-      let!(:li3) { create(:line_item, order: o3 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
+      let!(:li3) { create(:line_item_with_shipment, order: o3 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
-      end
-
-      it "displays a quick search input" do
-        expect(page).to have_field "quick_search"
+        visit_bulk_order_management
       end
 
       it "filters line items based on their attributes and the contents of the quick search input" do
         expect(page).to have_selector "tr#li_#{li1.id}"
         expect(page).to have_selector "tr#li_#{li2.id}"
         expect(page).to have_selector "tr#li_#{li3.id}"
-        fill_in "quick_search", :with => o1.email
+        fill_in "quick_search", with: o1.email
         expect(page).to have_selector "tr#li_#{li1.id}"
-        expect(page).to have_no_selector "tr#li_#{li2.id}",  true
+        expect(page).to have_no_selector "tr#li_#{li2.id}"
         expect(page).to have_no_selector "tr#li_#{li3.id}"
       end
     end
@@ -449,13 +443,13 @@ feature %q{
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.today - 7.days) }
       let!(:o3) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now.end_of_day) }
       let!(:o4) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now.end_of_day + 1.second) }
-      let!(:li1) { create(:line_item, order: o1, :quantity => 1 ) }
-      let!(:li2) { create(:line_item, order: o2, :quantity => 2 ) }
-      let!(:li3) { create(:line_item, order: o3, :quantity => 3 ) }
-      let!(:li4) { create(:line_item, order: o4, :quantity => 4 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1, quantity: 1 ) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2, quantity: 2 ) }
+      let!(:li3) { create(:line_item_with_shipment, order: o3, quantity: 3 ) }
+      let!(:li4) { create(:line_item_with_shipment, order: o4, quantity: 4 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
       end
 
       it "displays date fields for filtering orders, with default values set" do
@@ -494,13 +488,13 @@ feature %q{
       context "when the form is dirty" do
         before do
           within("tr#li_#{li2.id} td.quantity") do
-            page.fill_in "quantity", :with => (li2.quantity + 1).to_s
+            page.fill_in "quantity", with: (li2.quantity + 1).to_s
           end
         end
 
         it "shows a dialog and ignores changes when confirm dialog is accepted" do
           page.driver.accept_modal :confirm, text: "Unsaved changes exist and will be lost if you continue." do
-            fill_in "start_date_filter", :with => (Date.current - 9).strftime("%F %T")
+            fill_in "start_date_filter", with: (Date.current - 9).strftime('%Y-%m-%d')
           end
           expect(page).to have_no_selector "#save-bar"
           within("tr#li_#{li2.id} td.quantity") do
@@ -510,7 +504,7 @@ feature %q{
 
         it "shows a dialog and keeps changes when confirm dialog is rejected" do
           page.driver.dismiss_modal :confirm, text: "Unsaved changes exist and will be lost if you continue." do
-            fill_in "start_date_filter", :with => (Date.current - 9).strftime("%F %T")
+            fill_in "start_date_filter", with: (Date.current - 9).strftime("%F %T")
           end
           expect(page).to have_selector "#save-bar"
           within("tr#li_#{li2.id} td.quantity") do
@@ -523,11 +517,11 @@ feature %q{
     context "bulk action controls" do
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li1) { create(:line_item, order: o1 ) }
-      let!(:li2) { create(:line_item, order: o2 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
       end
 
       it "displays a checkbox for each line item in the list" do
@@ -558,7 +552,7 @@ feature %q{
             check "bulk"
           end
           find("div#bulk-actions-dropdown").click
-          find("div#bulk-actions-dropdown div.menu_item", :text => "Delete Selected" ).click
+          find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
           expect(page).to have_selector "tr#li_#{li1.id}"
           expect(page).to have_no_selector "tr#li_#{li2.id}"
         end
@@ -567,8 +561,10 @@ feature %q{
       context "when a filter has been applied" do
         it "only toggles checkboxes which are in filteredLineItems" do
           fill_in "quick_search", with: o1.number
+          expect(page).to have_no_selector "tr#li_#{li2.id}"
           check "toggle_bulk"
           fill_in "quick_search", with: ''
+          wait_until { request_monitor_finished 'LineItemsCtrl' }
           expect(find("tr#li_#{li1.id} input[type='checkbox'][name='bulk']").checked?).to be true
           expect(find("tr#li_#{li2.id} input[type='checkbox'][name='bulk']").checked?).to be false
           expect(find("input[type='checkbox'][name='toggle_bulk']").checked?).to be false
@@ -577,28 +573,33 @@ feature %q{
         it "only applies the delete action to filteredLineItems" do
           check "toggle_bulk"
           fill_in "quick_search", with: o1.number
+          expect(page).to have_no_selector "tr#li_#{li2.id}"
           find("div#bulk-actions-dropdown").click
-          find("div#bulk-actions-dropdown div.menu_item", :text => "Delete Selected" ).click
-          fill_in "quick_search", with: ''
+          find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
           expect(page).to have_no_selector "tr#li_#{li1.id}"
+          expect(page).to have_selector "#quick_search"
+          fill_in "quick_search", with: ''
+          wait_until { request_monitor_finished 'LineItemsCtrl' }
           expect(page).to have_selector "tr#li_#{li2.id}"
+          expect(page).to have_no_selector "tr#li_#{li1.id}"
         end
       end
     end
 
     context "using action buttons" do
       context "using edit buttons" do
-        let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-        let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-        let!(:li1) { create(:line_item, order: o1 ) }
-        let!(:li2) { create(:line_item, order: o2 ) }
+        let(:address) { create(:address) }
+        let!(:o1) { create(:order_with_distributor, ship_address: address, state: 'complete', completed_at: Time.zone.now ) }
+        let!(:o2) { create(:order_with_distributor, ship_address: address, state: 'complete', completed_at: Time.zone.now ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
         before :each do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "shows an edit button for line_items, which takes the user to the standard edit page for the order" do
-          expect(page).to have_selector "a.edit-order", :count => 2
+          expect(page).to have_selector "a.edit-order", count: 2
 
           # Shows a confirm dialog when unsaved changes exist
           page.driver.dismiss_modal :confirm, text: "Unsaved changes exist and will be lost if you continue." do
@@ -617,6 +618,7 @@ feature %q{
           within "tr#li_#{li1.id}" do
             find("a.edit-order").click
           end
+
           expect(URI.parse(current_url).path).to eq "/admin/orders/#{o1.number}/edit"
         end
       end
@@ -624,22 +626,22 @@ feature %q{
       context "using delete buttons" do
         let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
         let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-        let!(:li1) { create(:line_item, order: o1 ) }
-        let!(:li2) { create(:line_item, order: o2 ) }
+        let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+        let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
         before :each do
-          visit '/admin/orders/bulk_management'
+          visit_bulk_order_management
         end
 
         it "removes a line item when the relevant delete button is clicked" do
-          expect(page).to have_selector "a.delete-line-item", :count => 2
+          expect(page).to have_selector "a.delete-line-item", count: 2
           accept_alert do
             find("tr#li_#{li1.id} a.delete-line-item").click
           end
-          expect(page).to have_no_selector "a.delete-line-item", :count => 2
-          expect(page).to have_selector "a.delete-line-item", :count => 1
-          visit '/admin/orders/bulk_management'
-          expect(page).to have_selector "a.delete-line-item", :count => 1
+          expect(page).to have_no_selector "a.delete-line-item", count: 2
+          expect(page).to have_selector "a.delete-line-item", count: 1
+          visit_bulk_order_management
+          expect(page).to have_selector "a.delete-line-item", count: 1
         end
       end
     end
@@ -647,23 +649,23 @@ feature %q{
     context "clicking the link on variant name" do
       let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li1) { create(:line_item, order: o1 ) }
-      let!(:li2) { create(:line_item, order: o2 ) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
       let!(:p3) { create(:product_with_option_types, group_buy: true, group_buy_unit_size: 5000, variant_unit: "weight", variants: [create(:variant, unit_value: 1000)] ) }
       let!(:v3) { p3.variants.first }
       let!(:o3) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:li3) { create(:line_item, order: o3, variant: v3, quantity: 3, max_quantity: 6 ) }
-      let!(:li4) { create(:line_item, order: o2, variant: v3, quantity: 1, max_quantity: 3 ) }
+      let!(:li3) { create(:line_item_with_shipment, order: o3, variant: v3, quantity: 3, max_quantity: 6 ) }
+      let!(:li4) { create(:line_item_with_shipment, order: o2, variant: v3, quantity: 1, max_quantity: 3 ) }
 
       before :each do
-        visit '/admin/orders/bulk_management'
+        visit_bulk_order_management
         within "tr#li_#{li3.id}" do
           find("a", text: li3.product.name + ": " + li3.variant.options_text).click
         end
       end
 
       it "displays group buy calc box" do
-        expect(page).to have_selector "div#group_buy_calculation", :visible => true
+        expect(page).to have_selector "div#group_buy_calculation", visible: true
 
         within "div#group_buy_calculation" do
           expect(page).to have_text "Group Buy Unit Size"
@@ -676,19 +678,19 @@ feature %q{
           expect(page).to have_text "0.8"
           expect(page).to have_text "Max Fulfilled Units"
           expect(page).to have_text "1.8"
-          expect(page).to have_selector "div.shared_resource", :visible => true
+          expect(page).to have_selector "div.shared_resource", visible: true
           within "div.shared_resource" do
-            expect(page).to have_selector "span", :text => "Shared Resource?"
+            expect(page).to have_selector "span", text: "Shared Resource?"
             expect(page).to have_selector "input#shared_resource"
           end
         end
       end
 
       it "all line items of the same variant" do
-        expect(page).to have_no_selector "tr#li_#{li1.id}", :visible => true
-        expect(page).to have_no_selector "tr#li_#{li2.id}", :visible => true
-        expect(page).to have_selector "tr#li_#{li3.id}", :visible => true
-        expect(page).to have_selector "tr#li_#{li4.id}", :visible => true
+        expect(page).to have_no_selector "tr#li_#{li1.id}", visible: true
+        expect(page).to have_no_selector "tr#li_#{li2.id}", visible: true
+        expect(page).to have_selector "tr#li_#{li3.id}", visible: true
+        expect(page).to have_selector "tr#li_#{li4.id}", visible: true
       end
 
       context "clicking 'Clear' in group buy box" do
@@ -697,11 +699,11 @@ feature %q{
         end
 
         it "shows all products and clears group buy box" do
-          expect(page).to have_no_selector "div#group_buy_calculation", :visible => true
-          expect(page).to have_selector "tr#li_#{li1.id}", :visible => true
-          expect(page).to have_selector "tr#li_#{li2.id}", :visible => true
-          expect(page).to have_selector "tr#li_#{li3.id}", :visible => true
-          expect(page).to have_selector "tr#li_#{li4.id}", :visible => true
+          expect(page).to have_no_selector "div#group_buy_calculation", visible: true
+          expect(page).to have_selector "tr#li_#{li1.id}", visible: true
+          expect(page).to have_selector "tr#li_#{li2.id}", visible: true
+          expect(page).to have_selector "tr#li_#{li3.id}", visible: true
+          expect(page).to have_selector "tr#li_#{li4.id}", visible: true
         end
       end
     end
@@ -713,8 +715,8 @@ feature %q{
     let(:d2) { create(:distributor_enterprise, name: 'Another Distributor') }
     let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d1 ) }
     let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now, distributor: d2 ) }
-    let!(:line_item_distributed) { create(:line_item, order: o1, product: create(:product, supplier: s1) ) }
-    let!(:line_item_not_distributed) { create(:line_item, order: o2, product: create(:product, supplier: s1) ) }
+    let!(:line_item_distributed) { create(:line_item_with_shipment, order: o1, product: create(:product, supplier: s1) ) }
+    let!(:line_item_not_distributed) { create(:line_item_with_shipment, order: o2, product: create(:product, supplier: s1) ) }
 
     before(:each) do
       @enterprise_user = create_enterprise_user
@@ -732,18 +734,24 @@ feature %q{
     end
 
     it "shows only line item from orders that I distribute, and not those that I supply" do
-      visit '/admin/orders/bulk_management'
+      visit_bulk_order_management
 
-      expect(page).to have_selector "tr#li_#{line_item_distributed.id}", :visible => true
-      expect(page).to have_no_selector "tr#li_#{line_item_not_distributed.id}", :visible => true
+      expect(page).to have_selector "tr#li_#{line_item_distributed.id}", visible: true
+      expect(page).to have_no_selector "tr#li_#{line_item_not_distributed.id}", visible: true
     end
   end
 
-  def select_date(date)
-    current_month = Time.zone.today.strftime("%B")
-    target_month = date.strftime("%B")
+  def visit_bulk_order_management
+    visit spree.admin_bulk_order_management_path
+    expect(page).to have_no_text 'Loading orders'
+  end
 
-    find('#ui-datepicker-div .ui-datepicker-header .ui-datepicker-prev').click if current_month != target_month
+  def select_date(date)
+    # Wait for datepicker to open and be associated to the datepicker trigger.
+    expect(page).to have_selector("#ui-datepicker-div")
+
+    navigate_datepicker_to_month date
+
     find('#ui-datepicker-div .ui-datepicker-calendar .ui-state-default', text: date.strftime("%e").to_s.strip, exact_text: true).click
   end
 end

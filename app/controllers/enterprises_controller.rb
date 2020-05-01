@@ -4,6 +4,7 @@ class EnterprisesController < BaseController
   layout "darkswarm"
   helper Spree::ProductsHelper
   include OrderCyclesHelper
+  include SerializerHelper
 
   # These prepended filters are in the reverse order of execution
   prepend_before_filter :set_order_cycles, :require_distributor_chosen, :reset_order, only: :shop
@@ -14,18 +15,11 @@ class EnterprisesController < BaseController
   respond_to :js, only: :permalink_checker
 
   def shop
-    return redirect_to spree.cart_path unless enough_stock?
+    return redirect_to main_app.cart_path unless enough_stock?
+
     set_noindex_meta_tag
 
-    enterprises = current_distributor
-      .plus_relatives_and_oc_producers(shop_order_cycles)
-      .activated
-      .includes(address: :state)
-      .all
-
-    enterprises = inject_json_ams('enterprises', enterprises)
-
-    render locals: { enterprises: enterprises }
+    @enterprise = current_distributor
   end
 
   def relatives
@@ -42,13 +36,15 @@ class EnterprisesController < BaseController
   end
 
   def check_permalink
-    render text: params[:permalink], status: 409 and return if Enterprise.find_by_permalink params[:permalink]
+    if Enterprise.find_by_permalink params[:permalink]
+      render(text: params[:permalink], status: :conflict) && return
+    end
 
     begin
-      Rails.application.routes.recognize_path( "/#{ params[:permalink].to_s }" )
-      render text: params[:permalink], status: 409
+      Rails.application.routes.recognize_path( "/#{params[:permalink]}" )
+      render text: params[:permalink], status: :conflict
     rescue ActionController::RoutingError
-      render text: params[:permalink], status: 200
+      render text: params[:permalink], status: :ok
     end
   end
 
@@ -67,7 +63,6 @@ class EnterprisesController < BaseController
   end
 
   def reset_order
-    distributor = Enterprise.is_distributor.find_by_permalink(params[:id]) || Enterprise.is_distributor.find(params[:id])
     order = current_order(true)
 
     reset_distributor(order, distributor)
@@ -77,6 +72,14 @@ class EnterprisesController < BaseController
     reset_order_cycle(order, distributor)
 
     order.save!
+  rescue ActiveRecord::RecordNotFound
+    flash[:error] = I18n.t(:enterprise_shop_show_error)
+    redirect_to shops_path
+  end
+
+  def distributor
+    @distributor ||= Enterprise.is_distributor.find_by_permalink(params[:id]) ||
+                     Enterprise.is_distributor.find(params[:id])
   end
 
   def reset_distributor(order, distributor)
@@ -93,8 +96,8 @@ class EnterprisesController < BaseController
   end
 
   def reset_order_cycle(order, distributor)
-    order_cycle_options = OrderCycle.active.with_distributor(distributor)
-    order.order_cycle = order_cycle_options.first if order_cycle_options.count == 1
+    order_cycles = Shop::OrderCyclesList.new(distributor, current_customer).call
+    order.order_cycle = order_cycles.first if order_cycles.size == 1
   end
 
   def shop_order_cycles
@@ -107,15 +110,5 @@ class EnterprisesController < BaseController
 
   def set_noindex_meta_tag
     @noindex_meta_tag = true unless current_distributor.visible?
-  end
-
-  def inject_json_ams(name, object)
-    options = {
-      each_serializer: Api::EnterpriseSerializer,
-      data: OpenFoodNetwork::EnterpriseInjectionData.new
-    }
-    serializer_instance = ActiveModel::ArraySerializer.new(object, options)
-
-    { name: name, json: serializer_instance.to_json }
   end
 end

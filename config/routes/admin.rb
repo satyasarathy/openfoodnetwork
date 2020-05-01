@@ -1,9 +1,16 @@
 Openfoodnetwork::Application.routes.draw do
   namespace :admin do
+
+    authenticated :spree_user, -> user { user.superadmin? } do
+      mount DelayedJobWeb, at: '/delayed_job'
+    end
+
     resources :bulk_line_items
 
     resources :order_cycles do
       post :bulk_update, on: :collection, as: :bulk_update
+      get :incoming
+      get :outgoing
 
       member do
         get :clone
@@ -68,20 +75,7 @@ Openfoodnetwork::Application.routes.draw do
       get :map_by_tag, on: :collection
     end
 
-    resource :content
-
-    resource :accounts_and_billing_settings, only: [:edit, :update] do
-      collection do
-        get :show_methods
-        get :start_job
-      end
-    end
-
-    resource :business_model_configuration, only: [:edit, :update], controller: 'business_model_configuration'
-
-    resource :cache_settings
-
-    resource :account, only: [:show], controller: 'account'
+    resource :contents
 
     resources :column_preferences, only: [], format: :json do
       put :bulk_update, on: :collection

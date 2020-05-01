@@ -1,7 +1,6 @@
 require 'spec_helper'
 
 describe Spree::Admin::ReportsController, type: :controller do
-
   # Given two distributors and two suppliers
   let(:bill_address) { create(:address) }
   let(:ship_address) { create(:address) }
@@ -14,9 +13,9 @@ describe Spree::Admin::ReportsController, type: :controller do
   let(:distributor1) { create(:distributor_enterprise) }
   let(:distributor2) { create(:distributor_enterprise) }
   let(:distributor3) { create(:distributor_enterprise) }
-  let(:product1) { create(:product, price: 12.34, distributors: [distributor1], supplier: supplier1) }
-  let(:product2) { create(:product, price: 23.45, distributors: [distributor2], supplier: supplier2) }
-  let(:product3) { create(:product, price: 34.56, distributors: [distributor3], supplier: supplier3) }
+  let(:product1) { create(:product, price: 12.34, supplier: supplier1) }
+  let(:product2) { create(:product, price: 23.45, supplier: supplier2) }
+  let(:product3) { create(:product, price: 34.56, supplier: supplier3) }
 
   # Given two order cycles with both distributors
   let(:ocA) { create(:simple_order_cycle, coordinator: coordinator1, distributors: [distributor1, distributor2], suppliers: [supplier1, supplier2, supplier3], variants: [product1.master, product3.master]) }
@@ -70,7 +69,7 @@ describe Spree::Admin::ReportsController, type: :controller do
 
     describe 'Orders & Fulfillment' do
       it "shows all orders in order cycles I coordinate" do
-        spree_post :orders_and_fulfillment, {q: {}}
+        spree_post :orders_and_fulfillment, q: {}
 
         expect(resulting_orders).to     include orderA1, orderA2
         expect(resulting_orders).not_to include orderB1, orderB2
@@ -98,7 +97,7 @@ describe Spree::Admin::ReportsController, type: :controller do
       let!(:present_objects) { [orderA1, orderA2, orderB1, orderB2] }
 
       it "only shows orders that I have access to" do
-        spree_post :bulk_coop, {q: {}}
+        spree_post :bulk_coop, q: {}
 
         expect(resulting_orders).to     include(orderA1, orderB1)
         expect(resulting_orders).not_to include(orderA2)
@@ -123,7 +122,7 @@ describe Spree::Admin::ReportsController, type: :controller do
         let!(:present_objects) { [orderA1, orderA2, orderB1, orderB2] }
 
         it "only shows orders that I distribute" do
-          spree_post :orders_and_fulfillment, {q: {}}
+          spree_post :orders_and_fulfillment, q: {}
 
           expect(resulting_orders).to     include orderA1, orderB1
           expect(resulting_orders).not_to include orderA2, orderB2
@@ -134,7 +133,7 @@ describe Spree::Admin::ReportsController, type: :controller do
         let!(:present_objects) { [orderA1, orderB1] }
 
         it "only shows the selected order cycle" do
-          spree_post :orders_and_fulfillment, q: {order_cycle_id_in: [ocA.id.to_s]}
+          spree_post :orders_and_fulfillment, q: { order_cycle_id_in: [ocA.id.to_s] }
 
           expect(resulting_orders).to     include(orderA1)
           expect(resulting_orders).not_to include(orderB1)
@@ -166,7 +165,7 @@ describe Spree::Admin::ReportsController, type: :controller do
         end
 
         it "only shows product line items that I am supplying" do
-          spree_post :bulk_coop, {q: {}}
+          spree_post :bulk_coop, q: {}
 
           expect(resulting_products).to     include product1
           expect(resulting_products).not_to include product2, product3
@@ -191,17 +190,30 @@ describe Spree::Admin::ReportsController, type: :controller do
         end
 
         it "only shows product line items that I am supplying" do
-          spree_post :orders_and_fulfillment, {q: {}}
+          spree_post :orders_and_fulfillment, q: {}
 
           expect(resulting_products).to     include product1
           expect(resulting_products).not_to include product2, product3
         end
 
         it "only shows the selected order cycle" do
-          spree_post :orders_and_fulfillment, q: {order_cycle_id_eq: ocA.id}
+          spree_post :orders_and_fulfillment, q: { order_cycle_id_eq: ocA.id }
 
           expect(resulting_orders_prelim).to     include(orderA1)
           expect(resulting_orders_prelim).not_to include(orderB1)
+        end
+
+        context 'when a purchased product is deleted' do
+          before { orderA1.line_items.first.product.destroy }
+
+          it "only shows product line items that I am supplying" do
+            spree_post :orders_and_fulfillment, q: {}
+
+            table_items = assigns(:report).table_items
+            variant = Spree::Variant.unscoped.find(table_items.first.variant_id)
+
+            expect(variant.product).to eq(product1)
+          end
         end
       end
 
@@ -250,7 +262,7 @@ describe Spree::Admin::ReportsController, type: :controller do
 
     it "creates a ProductAndInventoryReport" do
       expect(OpenFoodNetwork::ProductsAndInventoryReport).to receive(:new)
-        .with(@admin_user, {"test" => "foo", "controller" => "spree/admin/reports", "action" => "products_and_inventory"}, false)
+        .with(@admin_user, { "test" => "foo", "controller" => "spree/admin/reports", "action" => "products_and_inventory" }, false)
         .and_return(report = double(:report))
       allow(report).to receive(:header).and_return []
       allow(report).to receive(:table).and_return []
@@ -264,9 +276,9 @@ describe Spree::Admin::ReportsController, type: :controller do
 
     it "should have report types for customers" do
       expect(subject.report_types[:customers]).to eq([
-        ["Mailing List", :mailing_list],
-        ["Addresses", :addresses]
-      ])
+                                                       ["Mailing List", :mailing_list],
+                                                       ["Addresses", :addresses]
+                                                     ])
     end
 
     context "with distributors and suppliers" do
@@ -301,7 +313,7 @@ describe Spree::Admin::ReportsController, type: :controller do
 
     it "creates a CustomersReport" do
       expect(OpenFoodNetwork::CustomersReport).to receive(:new)
-        .with(@admin_user, {"test" => "foo", "controller" => "spree/admin/reports", "action" => "customers"}, false)
+        .with(@admin_user, { "test" => "foo", "controller" => "spree/admin/reports", "action" => "customers" }, false)
         .and_return(report = double(:report))
       allow(report).to receive(:header).and_return []
       allow(report).to receive(:table).and_return []
@@ -322,7 +334,7 @@ describe Spree::Admin::ReportsController, type: :controller do
       end
 
       it "shows report data" do
-        spree_post :users_and_enterprises, {q: {}}
+        spree_post :users_and_enterprises, q: {}
         expect(assigns(:report).table.empty?).to be false
       end
     end

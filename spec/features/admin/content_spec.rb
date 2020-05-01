@@ -1,9 +1,9 @@
 require 'spec_helper'
 
-feature %q{
+feature '
   As a site administrator
   I want to configure the site content
-} do
+' do
   include AuthenticationWorkflow
   include WebHelper
 
@@ -44,7 +44,7 @@ feature %q{
 
     expect(page).to have_content 'Your content has been successfully updated!'
 
-    visit spree.admin_path
+    visit spree.admin_dashboard_path
 
     expect(page).to have_link('User Guide', href: 'http://www.openfoodnetwork.org/platform/user-guide/')
     expect(find_link('User Guide')[:target]).to eq('_blank')

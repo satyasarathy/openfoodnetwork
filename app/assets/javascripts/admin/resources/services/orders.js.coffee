@@ -9,7 +9,7 @@ angular.module("admin.resources").factory 'Orders', ($q, OrderResource, RequestM
       request = OrderResource.index params, (data) =>
         @load(data)
         (callback || angular.noop)(data)
-      RequestMonitor.load(request.$promise)
+      @all.$promise = request.$promise
       @all
 
     load: (data) ->
@@ -43,6 +43,20 @@ angular.module("admin.resources").factory 'Orders', ($q, OrderResource, RequestM
       for attr, value of order when not angular.equals(value, @pristineByID[order.id][attr])
         changed.push attr unless attr is "$$hashKey"
       changed
+
+    capture: (order) ->
+      @processAction('capture', order)
+
+    ship: (order) ->
+      @processAction('ship', order)
+
+    processAction: (action, order) ->
+      OrderResource[action] {id: order.number}, (data) =>
+        if data.id
+          angular.merge(order, data)
+          data
+      , (response) =>
+        response.data
 
     resetAttribute: (order, attribute) ->
       order[attribute] = @pristineByID[order.id][attribute]

@@ -4,6 +4,8 @@ module Spree
   Payment.class_eval do
     extend Spree::LocalizedNumber
 
+    delegate :line_items, to: :order
+
     has_one :adjustment, as: :source, dependent: :destroy
 
     after_save :ensure_correct_adjustment, :update_order
@@ -30,15 +32,6 @@ module Spree
       I18n.t('payment_method_fee')
     end
 
-    # This is called by the calculator of a payment method
-    def line_items
-      if order.complete? && Spree::Config[:track_inventory_levels]
-        order.line_items.select { |li| inventory_units.pluck(:variant_id).include?(li.variant_id) }
-      else
-        order.line_items
-      end
-    end
-
     # Pin payments lacks void and credit methods, but it does have refund
     # Here we swap credit out for refund and remove void as a possible action
     def actions_with_pin_payment_adaptations
@@ -51,8 +44,7 @@ module Spree
     end
     alias_method_chain :actions, :pin_payment_adaptations
 
-
-    def refund!(refund_amount=nil)
+    def refund!(refund_amount = nil)
       protect_from_connection_error do
         check_environment
 
@@ -67,12 +59,12 @@ module Spree
         record_response(response)
 
         if response.success?
-          self.class.create({ :order => order,
-                              :source => self,
-                              :payment_method => payment_method,
-                              :amount => refund_amount.abs * -1,
-                              :response_code => response.authorization,
-                              :state => 'completed' }, :without_protection => true)
+          self.class.create({ order: order,
+                              source: self,
+                              payment_method: payment_method,
+                              amount: refund_amount.abs * -1,
+                              response_code: response.authorization,
+                              state: 'completed' }, without_protection: true)
         else
           gateway_error(response)
         end
@@ -91,7 +83,7 @@ module Spree
 
     private
 
-    def calculate_refund_amount(refund_amount=nil)
+    def calculate_refund_amount(refund_amount = nil)
       refund_amount ||= credit_allowed >= order.outstanding_balance.abs ? order.outstanding_balance.abs : credit_allowed.abs
       refund_amount.to_f
     end
@@ -101,6 +93,7 @@ module Spree
       return unless source.try(:save_requested_by_customer?)
       return unless source.number || source.gateway_payment_profile_id
       return unless source.gateway_customer_profile_id.nil?
+
       payment_method.create_profile(self)
     rescue ActiveMerchant::ConnectionError => e
       gateway_error e
@@ -113,6 +106,7 @@ module Spree
     def revoke_adjustment_eligibility
       return unless adjustment.try(:reload)
       return if adjustment.finalized?
+
       adjustment.update_attribute(:eligible, false)
       adjustment.finalize!
     end

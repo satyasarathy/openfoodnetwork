@@ -54,7 +54,7 @@ feature 'Multilingual', js: true do
       end
 
       scenario "in the cart page" do
-        visit spree.cart_path(locale: 'es')
+        visit main_app.cart_path(locale: 'es')
 
         expect_menu_and_cookie_in_es
         expect(page).to have_content 'Precio'
@@ -125,7 +125,7 @@ feature 'Multilingual', js: true do
         expect(page).to have_content 'SHOPS'
 
         find('ul.right li.language-switcher').click
-        within'ul.right li.language-switcher ul.dropdown' do
+        within 'ul.right li.language-switcher ul.dropdown' do
           expect(page).to have_link I18n.t('language_name', locale: :en), href: '?locale=en'
           expect(page).to have_link I18n.t('language_name', locale: :es, default: 'Language Name'), href: '?locale=es'
 

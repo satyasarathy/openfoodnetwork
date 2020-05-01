@@ -40,11 +40,12 @@ describe SubscriptionPlacementJob do
 
   describe "performing the job" do
     context "when unplaced proxy_orders exist" do
-      let!(:proxy_order) { create(:proxy_order) }
+      let!(:subscription) { create(:subscription, with_items: true) }
+      let!(:proxy_order) { create(:proxy_order, subscription: subscription) }
 
       before do
         allow(job).to receive(:proxy_orders) { ProxyOrder.where(id: proxy_order.id) }
-        allow(job).to receive(:process)
+        allow(job).to receive(:place_order)
       end
 
       it "marks placeable proxy_orders as processed by setting placed_at" do
@@ -54,7 +55,7 @@ describe SubscriptionPlacementJob do
 
       it "processes placeable proxy_orders" do
         job.perform
-        expect(job).to have_received(:process).with(proxy_order.reload.order)
+        expect(job).to have_received(:place_order).with(proxy_order.reload.order)
       end
     end
   end
@@ -63,24 +64,22 @@ describe SubscriptionPlacementJob do
     let(:order_cycle) { create(:simple_order_cycle) }
     let(:shop) { order_cycle.coordinator }
     let(:order) { create(:order, order_cycle: order_cycle, distributor: shop) }
-    let(:ex) { create(:exchange, :order_cycle => order_cycle, :sender => shop, :receiver => shop, :incoming => false) }
-    let(:variant1) { create(:variant, count_on_hand: 5) }
-    let(:variant2) { create(:variant, count_on_hand: 5) }
-    let(:variant3) { create(:variant, count_on_hand: 5) }
+    let(:ex) { create(:exchange, order_cycle: order_cycle, sender: shop, receiver: shop, incoming: false) }
+    let(:variant1) { create(:variant, on_hand: 5) }
+    let(:variant2) { create(:variant, on_hand: 5) }
+    let(:variant3) { create(:variant, on_hand: 5) }
     let!(:line_item1) { create(:line_item, order: order, variant: variant1, quantity: 3) }
     let!(:line_item2) { create(:line_item, order: order, variant: variant2, quantity: 3) }
     let!(:line_item3) { create(:line_item, order: order, variant: variant3, quantity: 3) }
-
-    before { Spree::Config.set(:allow_backorders, false) }
 
     context "when all items are available from the order cycle" do
       before { [variant1, variant2, variant3].each { |v| ex.variants << v } }
 
       context "and insufficient stock exists to fulfil the order for some items" do
         before do
-          variant1.update_attribute(:count_on_hand, 5)
-          variant2.update_attribute(:count_on_hand, 2)
-          variant3.update_attribute(:count_on_hand, 0)
+          variant1.update_attribute(:on_hand, 5)
+          variant2.update_attribute(:on_hand, 2)
+          variant3.update_attribute(:on_hand, 0)
         end
 
         it "caps quantity at the stock level for stock-limited items, and reports the change" do
@@ -100,9 +99,9 @@ describe SubscriptionPlacementJob do
 
       context "and insufficient stock exists to fulfil the order for some items" do
         before do
-          variant1.update_attribute(:count_on_hand, 5)
-          variant2.update_attribute(:count_on_hand, 2)
-          variant3.update_attribute(:count_on_hand, 0)
+          variant1.update_attribute(:on_hand, 5)
+          variant2.update_attribute(:on_hand, 2)
+          variant3.update_attribute(:on_hand, 0)
         end
 
         it "sets quantity to 0 for unavailable items, and reports the change" do
@@ -119,8 +118,12 @@ describe SubscriptionPlacementJob do
   end
 
   describe "processing a subscription order" do
-    let(:subscription) { create(:subscription, with_items: true) }
-    let(:shop) { subscription.shop }
+    let!(:shipping_method_created_earlier) { create(:shipping_method, distributors: [shop]) }
+    let!(:shipping_method) { create(:shipping_method, distributors: [shop]) }
+    let!(:shipping_method_created_later) { create(:shipping_method, distributors: [shop]) }
+
+    let(:shop) { create(:enterprise) }
+    let(:subscription) { create(:subscription, shop: shop, with_items: true) }
     let(:proxy_order) { create(:proxy_order, subscription: subscription) }
     let(:oc) { proxy_order.order_cycle }
     let(:ex) { oc.exchanges.outgoing.find_by_sender_id_and_receiver_id(shop.id, shop.id) }
@@ -140,20 +143,33 @@ describe SubscriptionPlacementJob do
       it "records an issue and ignores it" do
         ActionMailer::Base.deliveries.clear
         expect(job).to receive(:record_issue).with(:complete, order).once
-        expect{ job.send(:process, order) }.to_not change{ order.reload.state }
+        expect{ job.send(:place_order, order) }.to_not change{ order.reload.state }
         expect(order.payments.first.state).to eq "checkout"
         expect(ActionMailer::Base.deliveries.count).to be 0
       end
     end
 
     context "when the order is not already complete" do
+      describe "selection of shipping method" do
+        let!(:subscription) do
+          create(:subscription, shop: shop, shipping_method: shipping_method, with_items: true)
+        end
+
+        it "uses the same shipping method after advancing the order" do
+          job.send(:place_order, order)
+          expect(order.state).to eq "complete"
+          order.reload
+          expect(order.shipping_method).to eq(shipping_method)
+        end
+      end
+
       context "when no stock items are available after capping stock" do
         before do
           allow(job).to receive(:unavailable_stock_lines_for) { order.line_items }
         end
 
         it "does not place the order, clears, all adjustments, and sends an empty_order email" do
-          expect{ job.send(:process, order) }.to_not change{ order.reload.completed_at }.from(nil)
+          expect{ job.send(:place_order, order) }.to_not change{ order.reload.completed_at }.from(nil)
           expect(order.adjustments).to be_empty
           expect(order.total).to eq 0
           expect(order.adjustment_total).to eq 0
@@ -166,13 +182,13 @@ describe SubscriptionPlacementJob do
         it "processes the order to completion, but does not process the payment" do
           # If this spec starts complaining about no shipping methods being available
           # on CI, there is probably another spec resetting the currency though Rails.cache.clear
-          expect{ job.send(:process, order) }.to change{ order.reload.completed_at }.from(nil)
+          expect{ job.send(:place_order, order) }.to change{ order.reload.completed_at }.from(nil)
           expect(order.completed_at).to be_within(5.seconds).of Time.zone.now
           expect(order.payments.first.state).to eq "checkout"
         end
 
         it "does not enqueue confirmation emails" do
-          expect{ job.send(:process, order) }.to_not enqueue_job ConfirmOrderJob
+          expect{ job.send(:place_order, order) }.to_not enqueue_job ConfirmOrderJob
           expect(job).to have_received(:send_placement_email).with(order, anything).once
         end
 
@@ -182,7 +198,7 @@ describe SubscriptionPlacementJob do
           it "records an error and does not attempt to send an email" do
             expect(job).to_not receive(:send_placement_email)
             expect(job).to receive(:record_and_log_error).once
-            job.send(:process, order)
+            job.send(:place_order, order)
           end
         end
       end

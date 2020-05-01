@@ -1,5 +1,7 @@
 class Subscription < ActiveRecord::Base
-  ALLOWED_PAYMENT_METHOD_TYPES = ["Spree::PaymentMethod::Check", "Spree::Gateway::StripeConnect"].freeze
+  ALLOWED_PAYMENT_METHOD_TYPES = ["Spree::PaymentMethod::Check",
+                                  "Spree::Gateway::StripeConnect",
+                                  "Spree::Gateway::StripeSCA"].freeze
 
   belongs_to :shop, class_name: 'Enterprise'
   belongs_to :customer
@@ -65,11 +67,13 @@ class Subscription < ActiveRecord::Base
 
   def pending?
     return true unless begins_at
+
     begins_at > Time.zone.now
   end
 
   def ended?
     return false unless ends_at
+
     ends_at < Time.zone.now
   end
 end

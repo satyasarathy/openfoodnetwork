@@ -23,11 +23,6 @@ class Customer < ActiveRecord::Base
 
   scope :of, ->(enterprise) { where(enterprise_id: enterprise) }
 
-  scope :of_regular_shops, lambda {
-    next scoped unless Spree::Config.accounts_distributor_id
-    where('enterprise_id <> ?', Spree::Config.accounts_distributor_id)
-  }
-
   before_create :associate_user
 
   private
@@ -46,6 +41,7 @@ class Customer < ActiveRecord::Base
 
   def check_for_orders
     return true unless orders.any?
+
     errors[:base] << I18n.t('admin.customers.destroy.has_associated_orders')
     false
   end

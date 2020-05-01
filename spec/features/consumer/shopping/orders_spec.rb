@@ -15,11 +15,10 @@ feature "Order Management", js: true do
 
     let!(:order) do
       create(:order_with_credit_payment,
-        customer: customer,
-        user: user,
-        distributor: distributor,
-        order_cycle: order_cycle
-      )
+             customer: customer,
+             user: user,
+             distributor: distributor,
+             order_cycle: order_cycle)
     end
 
     before do
@@ -36,7 +35,7 @@ feature "Order Management", js: true do
     end
 
     context "when checking out as an anonymous guest" do
-      let(:user) { nil }
+      let(:user) { Spree::User.anonymous! }
 
       it "allows the user to see the details" do
         # Cannot load the page without token
@@ -88,16 +87,31 @@ feature "Order Management", js: true do
     let(:distributor) { create(:distributor_enterprise, with_payment_and_shipping: true, charges_sales_tax: true) }
     let(:order_cycle) { create(:order_cycle) }
     let(:shipping_method) { distributor.shipping_methods.first }
-    let(:order) { create(:completed_order_with_totals, order_cycle: order_cycle, distributor: distributor, user: user, bill_address: address, ship_address: address) }
+    let(:order) do
+      create(
+        :completed_order_with_totals,
+        order_cycle: order_cycle,
+        distributor: distributor,
+        user: user,
+        bill_address: address,
+        ship_address: address
+      )
+    end
     let!(:item1) { order.reload.line_items.first }
     let!(:item2) { create(:line_item, order: order) }
     let!(:item3) { create(:line_item, order: order) }
 
     before do
-      shipping_method.calculator.update_attributes(preferred_amount: 5.0)
-      order.update_attributes(shipping_method_id: shipping_method.id)
-      order.reload.save
+      order.shipment.shipping_method.calculator.update_attributes(preferred_amount: 5.0)
+      order.save
+      order.reload
+
       quick_login_as user
+    end
+
+    it 'shows the name of the shipping method' do
+      visit spree.order_path(order)
+      expect(find('#order')).to have_content(shipping_method.name)
     end
 
     context "when the distributor doesn't allow changes to be made to orders" do
@@ -132,7 +146,10 @@ feature "Order Management", js: true do
         within "tr.variant-#{item1.variant.id}" do
           expect(page).to have_content item1.product.name
           expect(page).to have_field 'order_line_items_attributes_0_quantity'
-          fill_in 'order_line_items_attributes_0_quantity', with: 2
+          # The original item quantity is 1, there are 4 more items available in stock
+          # By changing quantity to 5 we validate the case where the original stock in the order
+          #   must be taken into account to fullfil the order (no insufficient stock error)
+          fill_in 'order_line_items_attributes_0_quantity', with: 5
         end
 
         expect(page).to have_button I18n.t(:save_changes)
@@ -140,19 +157,19 @@ feature "Order Management", js: true do
         expect(find("tr.variant-#{item2.variant.id}")).to have_content item2.product.name
         expect(find("tr.variant-#{item3.variant.id}")).to have_content item3.product.name
         expect(find("tr.order-adjustment")).to have_content "Shipping"
-        expect(find("tr.order-adjustment")).to have_content "$5.00"
+        expect(find("tr.order-adjustment")).to have_content "5.00"
 
         click_button I18n.t(:save_changes)
 
-        expect(find(".order-total.grand-total")).to have_content "$45.00"
-        expect(item1.reload.quantity).to eq 2
+        expect(find(".order-total.grand-total")).to have_content "115.00"
+        expect(item1.reload.quantity).to eq 5
 
         # Deleting an item
         within "tr.variant-#{item2.variant.id}" do
           click_link "delete_line_item_#{item2.id}"
         end
 
-        expect(find(".order-total.grand-total")).to have_content "$35.00"
+        expect(find(".order-total.grand-total")).to have_content "105.00"
         expect(Spree::LineItem.find_by_id(item2.id)).to be nil
 
         # Cancelling the order
@@ -166,6 +183,6 @@ feature "Order Management", js: true do
   end
 
   def be_confirmed_order_page
-    have_content /Order #\w+ Confirmed NOT PAID/
+    have_content /Order #\w+ Confirmed PAID/
   end
 end

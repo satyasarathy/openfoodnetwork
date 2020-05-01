@@ -32,14 +32,14 @@ class AbilityDecorator
   # Users can manage products if they have an enterprise that is not a profile.
   def can_manage_products?(user)
     can_manage_enterprises?(user) &&
-    user.enterprises.any? { |e| e.category != :hub_profile && e.producer_profile_only != true }
+      user.enterprises.any? { |e| e.category != :hub_profile && e.producer_profile_only != true }
   end
 
   # Users can manage order cycles if they manage a sells own/any enterprise
   # OR if they manage a producer which is included in any order cycles
   def can_manage_order_cycles?(user)
     can_manage_orders?(user) ||
-    OrderCycle.accessible_by(user).any?
+      OrderCycle.accessible_by(user).any?
   end
 
   # Users can manage orders if they have a sells own/any enterprise.
@@ -54,7 +54,7 @@ class AbilityDecorator
   def add_shopping_abilities(user)
     can [:destroy], Spree::LineItem do |item|
       user == item.order.user &&
-      item.order.changes_allowed?
+        item.order.changes_allowed?
     end
 
     can [:cancel], Spree::Order do |order|
@@ -71,13 +71,12 @@ class AbilityDecorator
   end
 
   # New users can create an enterprise, and gain other permissions from doing this.
-  def add_base_abilities(user)
+  def add_base_abilities(_user)
     can [:create], Enterprise
   end
 
   def add_group_management_abilities(user)
     can [:admin, :index], :overview
-    can [:admin, :sync], :analytic
     can [:admin, :index], EnterpriseGroup
     can [:read, :edit, :update], EnterpriseGroup do |group|
       user.owned_groups.include? group
@@ -90,7 +89,6 @@ class AbilityDecorator
     can [:create, :search], nil
 
     can [:admin, :index], :overview
-    can [:admin, :sync], :analytic
 
     can [:admin, :index, :read, :create, :edit, :update_positions, :destroy], ProducerProperty
 
@@ -138,7 +136,10 @@ class AbilityDecorator
   def add_product_management_abilities(user)
     # Enterprise User can only access products that they are a supplier for
     can [:create], Spree::Product
-    can [:admin, :read, :index, :update, :product_distributions, :seo, :group_buy_options, :bulk_update, :clone, :delete, :destroy], Spree::Product do |product|
+    can [:admin, :read, :index, :update,
+         :seo, :group_buy_options,
+         :bulk_update, :clone, :delete,
+         :destroy], Spree::Product do |product|
       OpenFoodNetwork::Permissions.new(user).managed_product_enterprises.include? product.supplier
     end
 
@@ -184,11 +185,14 @@ class AbilityDecorator
     can [:admin, :index, :guide, :import, :save, :save_data, :validate_data, :reset_absent_products], ProductImport::ProductImporter
 
     # Reports page
-    can [:admin, :index, :customers, :orders_and_distributors, :group_buys, :bulk_coop, :payments, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :packing], :report
+    can [:admin, :index, :customers, :orders_and_distributors, :group_buys, :bulk_coop, :payments,
+         :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :packing],
+        Spree::Admin::ReportsController
+    add_enterprise_fee_summary_abilities
   end
 
   def add_order_cycle_management_abilities(user)
-    can [:admin, :index, :read, :edit, :update], OrderCycle do |order_cycle|
+    can [:admin, :index, :read, :edit, :update, :incoming, :outgoing], OrderCycle do |order_cycle|
       OrderCycle.accessible_by(user).include? order_cycle
     end
     can [:admin, :index, :create], Schedule
@@ -203,16 +207,20 @@ class AbilityDecorator
   end
 
   def add_order_management_abilities(user)
-    # Enterprise User can only access orders that they are a distributor for
     can [:index, :create], Spree::Order
     can [:read, :update, :fire, :resend, :invoice, :print, :print_ticket], Spree::Order do |order|
       # We allow editing orders with a nil distributor as this state occurs
       # during the order creation process from the admin backend
-      order.distributor.nil? || user.enterprises.include?(order.distributor) || order.order_cycle.andand.coordinated_by?(user)
+      order.distributor.nil? ||
+        # Enterprise User can access orders that they are a distributor for
+        user.enterprises.include?(order.distributor) ||
+        # Enterprise User can access orders that are placed inside a OC they coordinate
+        order.order_cycle.andand.coordinated_by?(user)
     end
-    can [:admin, :bulk_management, :managed, :bulk_invoice], Spree::Order do
+    can [:admin, :bulk_management, :managed], Spree::Order do
       user.admin? || user.enterprises.any?(&:is_distributor)
     end
+    can [:admin, :create, :show, :poll], :invoice
     can [:admin, :visible], Enterprise
     can [:admin, :index, :create, :update, :destroy], :line_item
     can [:admin, :index, :create], Spree::LineItem
@@ -256,7 +264,10 @@ class AbilityDecorator
     end
 
     # Reports page
-    can [:admin, :index, :customers, :group_buys, :bulk_coop, :sales_tax, :payments, :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :xero_invoices], :report
+    can [:admin, :index, :customers, :group_buys, :bulk_coop, :sales_tax, :payments,
+         :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory,
+         :order_cycle_management, :xero_invoices], Spree::Admin::ReportsController
+    add_enterprise_fee_summary_abilities
 
     can [:create], Customer
     can [:admin, :index, :update, :destroy, :show], Customer, enterprise_id: Enterprise.managed_by(user).pluck(:id)
@@ -278,6 +289,13 @@ class AbilityDecorator
     can [:destroy], EnterpriseRelationship do |enterprise_relationship|
       user.enterprises.include? enterprise_relationship.parent
     end
+  end
+
+  def add_enterprise_fee_summary_abilities
+    # Reveal the report link in spree/admin/reports#index
+    can [:enterprise_fee_summary], Spree::Admin::ReportsController
+    # Allow direct access to the report resource
+    can [:admin, :new, :create], :enterprise_fee_summary
   end
 end
 

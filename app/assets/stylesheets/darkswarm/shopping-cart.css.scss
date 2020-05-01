@@ -1,6 +1,7 @@
 @import "mixins";
 @import "branding";
 @import "compass/css3/user-interface";
+@import 'variables';
 
 .cart {
   @include user-select(none);
@@ -15,8 +16,8 @@
 
   .joyride-tip-guide {
     display: block;
-    right: 10px;
-    top: 55px;
+    right: 0;
+    top: $topbar-height;
     width: 480px;
 
     @media screen and (min-width: 641px) {
@@ -112,5 +113,16 @@
     padding-right: 0.5em;
     width: 36px;
     height: 36px;
+  }
+}
+
+.links {
+  .button {
+    padding: 1.125rem 0 1.1875rem;
+    width: 210px;
+
+    @media all and (max-width: 480px) {
+      width: 100%;
+    }
   }
 }

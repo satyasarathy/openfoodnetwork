@@ -1,9 +1,18 @@
 require 'csv'
 
-namespace :openfoodnetwork do
+namespace :ofn do
+  # Note this task is still rather naive and only covers the simple case where
+  # an enterprise was created but never used and thus, does not have any
+  # associated entities like orders.
+  desc 'remove the specified enterprise'
+  task :remove_enterprise, [:enterprise_id] => :environment do |_task, args|
+    enterprise = Enterprise.find(args.enterprise_id)
+    enterprise.destroy
+  end
+
   namespace :dev do
     desc 'export enterprises to CSV'
-    task :export_enterprises => :environment do
+    task export_enterprises: :environment do
       CSV.open('db/enterprises.csv', 'wb') do |csv|
         csv << enterprise_header
         enterprises.each do |enterprise|
@@ -11,7 +20,6 @@ namespace :openfoodnetwork do
         end
       end
     end
-
 
     private
 

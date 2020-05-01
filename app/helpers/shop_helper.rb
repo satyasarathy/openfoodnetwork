@@ -8,6 +8,10 @@ module ShopHelper
     end
   end
 
+  def oc_select_options
+    @order_cycles.map { |oc| { time: pickup_time(oc), id: oc.id } }
+  end
+
   def require_customer?
     current_distributor.require_login? && !user_is_related_to_distributor?
   end
@@ -22,10 +26,28 @@ module ShopHelper
 
   def shop_tabs
     [
-      { name: 'about', title: t(:shopping_tabs_about, distributor: current_distributor.name), cols: 6 },
-      { name: 'producers', title: t(:label_producers), cols: 2 },
-      { name: 'contact', title: t(:shopping_tabs_contact), cols: 2 },
-      { name: 'groups', title: t(:label_groups), cols: 2 },
-    ]
+      { name: 'home', title: t(:shopping_tabs_home), show: show_home_tab? },
+      { name: 'shop', title: t(:shopping_tabs_shop), show: !require_customer? },
+      { name: 'about', title: t(:shopping_tabs_about), show: true },
+      { name: 'producers', title: t(:label_producers), show: true },
+      { name: 'contact', title: t(:shopping_tabs_contact), show: true },
+      { name: 'groups', title: t(:label_groups), show: current_distributor.groups.any? },
+    ].select{ |tab| tab[:show] }
+  end
+
+  def shop_tab_names
+    shop_tabs.map { |tab| tab[:name] }
+  end
+
+  def show_home_tab?
+    require_customer? || current_distributor.preferred_shopfront_message.present?
+  end
+
+  def shopfront_closed_message?
+    no_open_order_cycles? && current_distributor.preferred_shopfront_closed_message.present?
+  end
+
+  def no_open_order_cycles?
+    @order_cycles && @order_cycles.empty?
   end
 end

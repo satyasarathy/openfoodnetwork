@@ -33,14 +33,21 @@ Openfoodnetwork::Application.configure do
   # Use https in email links
   config.action_mailer.default_url_options = { protocol: 'https' }
 
-  # See everything in the log (default is :info)
+  # Note: This config no longer works with our new logging strategy
   # config.log_level = :debug
 
-  # Use a different logger for distributed setups
-  # config.logger = SyslogLogger.new
+  # Configure logging for Rails 3.2:
+  config.logger = ActiveSupport::TaggedLogging.new(Logger.new(Rails.root.join("log", "#{Rails.env}.log")))
+  config.logger.level = Logger::INFO
+  config.logger.formatter = Logger::Formatter.new
+  config.logger.datetime_format = "%Y-%m-%d %H:%M:%S"
+  # Once we get to Rails 4.0, we can replace the above with:
+  #config.log_formatter = Logger::Formatter.new.tap { |f| f.datetime_format = "%Y-%m-%d %H:%M:%S" }
 
   # Use a different cache store in production
-  config.cache_store = :dalli_store
+  memcached_value_max_megabytes = ENV.fetch("MEMCACHED_VALUE_MAX_MEGABYTES", 1).to_i
+  memcached_value_max_bytes = memcached_value_max_megabytes * 1024 * 1024
+  config.cache_store = :dalli_store, { value_max_bytes: memcached_value_max_bytes }
 
   # Enable serving of images, stylesheets, and JavaScripts from an asset server
   # config.action_controller.asset_host = "http://assets.example.com"

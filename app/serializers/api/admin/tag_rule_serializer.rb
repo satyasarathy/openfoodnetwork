@@ -1,10 +1,8 @@
 class Api::Admin::TagRuleSerializer < ActiveModel::Serializer
-  def serializable_hash
-    rule_specific_serializer.serializable_hash
-  end
+  delegate :serializable_hash, to: :rule_specific_serializer
 
   def rule_specific_serializer
-    "Api::Admin::#{object.class.to_s}Serializer".constantize.new(object)
+    "Api::Admin::#{object.class}Serializer".constantize.new(object)
   end
 end
 
@@ -18,7 +16,8 @@ module Api::Admin::TagRule
   end
 
   class FilterShippingMethodsSerializer < BaseSerializer
-    attributes :preferred_matched_shipping_methods_visibility, :preferred_shipping_method_tags, :shipping_method_tags
+    attributes :preferred_matched_shipping_methods_visibility, :preferred_shipping_method_tags,
+               :shipping_method_tags
 
     def shipping_method_tags
       object.preferred_shipping_method_tags.split(",")
@@ -26,7 +25,8 @@ module Api::Admin::TagRule
   end
 
   class FilterPaymentMethodsSerializer < BaseSerializer
-    attributes :preferred_matched_payment_methods_visibility, :preferred_payment_method_tags, :payment_method_tags
+    attributes :preferred_matched_payment_methods_visibility, :preferred_payment_method_tags,
+               :payment_method_tags
 
     def payment_method_tags
       object.preferred_payment_method_tags.split(",")

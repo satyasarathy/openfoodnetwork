@@ -3,7 +3,6 @@ require 'spec_helper'
 module Api
   describe CustomersController, type: :controller do
     include AuthenticationWorkflow
-    include OpenFoodNetwork::ApiHelper
     render_views
 
     let(:user) { create(:user) }
@@ -22,18 +21,6 @@ module Api
         expect(response.status).to eq 200
         expect(json_response.length).to eq 1
         expect(json_response.first[:id]).to eq customer1.id
-      end
-
-      context "when the accounts distributor id has been set" do
-        before do
-          Spree::Config.set(accounts_distributor_id: customer1.enterprise.id)
-        end
-
-        it "ignores the customer for that enterprise (if it exists)" do
-          spree_get :index
-          expect(response.status).to eq 200
-          expect(json_response.length).to eq 0
-        end
       end
     end
 

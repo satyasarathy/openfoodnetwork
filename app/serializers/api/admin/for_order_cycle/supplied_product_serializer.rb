@@ -14,11 +14,12 @@ class Api::Admin::ForOrderCycle::SuppliedProductSerializer < ActiveModel::Serial
   end
 
   def variants
-    variants = if order_cycle.prefers_product_selection_from_coordinator_inventory_only?
-      object.variants.visible_for(order_cycle.coordinator)
-    else
-      object.variants
-    end
+    variants = if order_cycle.present? &&
+                  order_cycle.prefers_product_selection_from_coordinator_inventory_only?
+                 object.variants.visible_for(order_cycle.coordinator)
+               else
+                 object.variants
+               end
     variants.map { |variant| { id: variant.id, label: variant.full_name } }
   end
 

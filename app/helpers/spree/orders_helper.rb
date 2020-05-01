@@ -5,10 +5,6 @@ module Spree
       order.nil? || order.line_items.empty?
     end
 
-    def alternative_available_distributors(order)
-      DistributionChangeValidator.new(order).available_distributors(Enterprise.all) - [order.distributor]
-    end
-
     def last_completed_order
       spree_current_user.orders.complete.last
     end
@@ -22,11 +18,13 @@ module Spree
       return @changeable_orders unless @changeable_orders.nil?
       return @changeable_orders = [] unless spree_current_user && current_distributor && current_order_cycle
       return @changeable_orders = [] unless current_distributor.allow_order_changes?
+
       @changeable_orders = Spree::Order.complete.where(
         state: 'complete',
         user_id: spree_current_user.id,
         distributor_id: current_distributor.id,
-        order_cycle_id: current_order_cycle.id)
+        order_cycle_id: current_order_cycle.id
+      )
     end
 
     def changeable_orders_link_path
@@ -35,6 +33,7 @@ module Spree
 
     def shop_changeable_orders_alert_html
       return "" unless changeable_orders.any?
+
       t(:shop_changeable_orders_alert_html,
         count: changeable_orders.count,
         path: changeable_orders_link_path,

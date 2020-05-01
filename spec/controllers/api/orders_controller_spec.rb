@@ -1,17 +1,22 @@
 require 'spec_helper'
-require 'spree/api/testing_support/helpers'
 
 module Api
   describe OrdersController, type: :controller do
     include AuthenticationWorkflow
     render_views
 
+    let!(:regular_user) { create(:user) }
+    let!(:admin_user) { create(:admin_user) }
+
+    let!(:distributor) { create(:distributor_enterprise) }
+    let!(:coordinator) { create(:distributor_enterprise) }
+    let!(:order_cycle) { create(:simple_order_cycle, coordinator: coordinator) }
+
     describe '#index' do
-      let!(:distributor) { create(:distributor_enterprise) }
       let!(:distributor2) { create(:distributor_enterprise) }
+      let!(:coordinator2) { create(:distributor_enterprise) }
       let!(:supplier) { create(:supplier_enterprise) }
-      let!(:coordinator) { create(:distributor_enterprise) }
-      let!(:order_cycle) { create(:simple_order_cycle, coordinator: coordinator) }
+      let!(:order_cycle2) { create(:simple_order_cycle, coordinator: coordinator2) }
       let!(:order1) do
         create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now,
                        distributor: distributor, billing_address: create(:address) )
@@ -24,26 +29,26 @@ module Api
         create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now,
                        distributor: distributor, billing_address: create(:address) )
       end
-      let!(:order4) { create(:completed_order_with_fees) }
+      let!(:order4) do
+        create(:completed_order_with_fees, order_cycle: order_cycle2, distributor: distributor2)
+      end
       let!(:order5) { create(:order, state: 'cart', completed_at: nil) }
       let!(:line_item1) do
-        create(:line_item, order: order1,
-                           product: create(:product, supplier: supplier))
+        create(:line_item_with_shipment, order: order1,
+                                         product: create(:product, supplier: supplier))
       end
       let!(:line_item2) do
-        create(:line_item, order: order2,
-                           product: create(:product, supplier: supplier))
+        create(:line_item_with_shipment, order: order2,
+                                         product: create(:product, supplier: supplier))
       end
       let!(:line_item3) do
-        create(:line_item, order: order2,
-                           product: create(:product, supplier: supplier))
+        create(:line_item_with_shipment, order: order2,
+                                         product: create(:product, supplier: supplier))
       end
       let!(:line_item4) do
-        create(:line_item, order: order3,
-                           product: create(:product, supplier: supplier))
+        create(:line_item_with_shipment, order: order3,
+                                         product: create(:product, supplier: supplier))
       end
-      let!(:regular_user) { create(:user) }
-      let!(:admin_user) { create(:admin_user) }
 
       context 'as a regular user' do
         before do
@@ -131,12 +136,6 @@ module Api
 
           expect(json_response['orders']).to eq serialized_orders([order4, order3, order2, order1])
         end
-
-        it 'can show only unfulfilled orders' do
-          get :index, format: :json, q: { inventory_units_shipment_id_null: true, s: 'created_at desc' }
-
-          expect(json_response['orders']).to eq serialized_orders([order3, order2, order1])
-        end
       end
 
       context 'with pagination' do
@@ -148,7 +147,7 @@ module Api
           get :index, per_page: 15, page: 1
 
           pagination_data = {
-            'results' => 3,
+            'results' => 2,
             'pages' => 1,
             'page' => 1,
             'per_page' => 15
@@ -159,7 +158,154 @@ module Api
       end
     end
 
+    describe "#show" do
+      let!(:order) { create(:completed_order_with_totals, order_cycle: order_cycle, distributor: distributor ) }
+
+      context "Resource not found" do
+        before { allow(controller).to receive(:spree_current_user) { admin_user } }
+
+        it "when no order number is given" do
+          get :show, id: nil
+          expect(response).to have_http_status(:not_found)
+        end
+
+        it "when order number given is not in the systen" do
+          get :show, id: "X1321313232"
+          expect(response).to have_http_status(:not_found)
+        end
+      end
+
+      context "access" do
+        it "returns unauthorized, as a regular user" do
+          allow(controller).to receive(:spree_current_user) { regular_user }
+          get :show, id: order.number
+          assert_unauthorized!
+        end
+
+        it "returns the order, as an admin user" do
+          allow(controller).to receive(:spree_current_user) { admin_user }
+          get :show, id: order.number
+          expect_order
+        end
+
+        it "returns the order, as the order distributor owner" do
+          allow(controller).to receive(:spree_current_user) { order.distributor.owner }
+          get :show, id: order.number
+          expect_order
+        end
+
+        it "returns unauthorized, as the order product's supplier owner" do
+          allow(controller).to receive(:spree_current_user) { order.line_items.first.variant.product.supplier.owner }
+          get :show, id: order.number
+          assert_unauthorized!
+        end
+
+        it "returns the order, as the Order Cycle coorinator owner" do
+          allow(controller).to receive(:spree_current_user) { order.order_cycle.coordinator.owner }
+          get :show, id: order.number
+          expect_order
+        end
+      end
+
+      context "as distributor owner" do
+        let!(:order) { create(:completed_order_with_fees, order_cycle: order_cycle, distributor: distributor ) }
+
+        before { allow(controller).to receive(:spree_current_user) { order.distributor.owner } }
+
+        it "can view an order not in a standard state" do
+          order.update_attributes(completed_at: nil, state: 'shipped')
+          get :show, id: order.number
+          expect_order
+        end
+
+        it "can view an order with weight calculator (this validates case where options[current_order] is nil on the shipping method serializer)" do
+          order.shipping_method.update_attribute(:calculator, create(:weight_calculator, calculable: order))
+          allow(controller).to receive(:current_order).and_return order
+          get :show, id: order.number
+          expect_order
+        end
+
+        it "returns an order with all required fields" do
+          get :show, id: order.number
+
+          expect_order
+          expect(json_response.symbolize_keys.keys).to include(*order_detailed_attributes)
+
+          expect(json_response[:bill_address]).to include(
+            'address1' => order.bill_address.address1,
+            'lastname' => order.bill_address.lastname
+          )
+          expect(json_response[:ship_address]).to include(
+            'address1' => order.ship_address.address1,
+            'lastname' => order.ship_address.lastname
+          )
+          expect(json_response[:shipping_method][:name]).to eq order.shipping_method.name
+
+          expect(json_response[:adjustments].first).to include(
+            'label' => "Transaction fee",
+            'amount' => order.adjustments.payment_fee.first.amount.to_s
+          )
+          expect(json_response[:adjustments].second).to include(
+            'label' => "Shipping",
+            'amount' => order.adjustments.shipping.first.amount.to_s
+          )
+
+          expect(json_response[:payments].first[:amount]).to eq order.payments.first.amount.to_s
+          expect(json_response[:line_items].size).to eq order.line_items.size
+          expect(json_response[:line_items].first[:variant][:product_name]). to eq order.line_items.first.variant.product.name
+        end
+      end
+    end
+
+    describe "#capture and #ship actions" do
+      let(:user) { create(:user) }
+      let(:product) { create(:simple_product) }
+      let(:distributor) { create(:distributor_enterprise, owner: user) }
+      let(:order_cycle) {
+        create(:simple_order_cycle,
+               distributors: [distributor], variants: [product.variants.first])
+      }
+      let!(:order) {
+        create(:order_with_totals_and_distribution,
+               user: user, distributor: distributor, order_cycle: order_cycle,
+               state: 'complete', payment_state: 'balance_due')
+      }
+
+      before do
+        order.finalize!
+        create(:check_payment, order: order, amount: order.total)
+        allow(controller).to receive(:spree_current_user) { order.distributor.owner }
+      end
+
+      describe "#capture" do
+        it "captures payments and returns an updated order object" do
+          put :capture, id: order.number
+
+          expect(order.reload.pending_payments.empty?).to be true
+          expect_order
+        end
+      end
+
+      describe "#ship" do
+        before do
+          order.payments.first.capture!
+        end
+
+        it "marks orders as shipped and returns an updated order object" do
+          put :ship, id: order.number
+
+          expect(order.reload.shipments.any?(&:shipped?)).to be true
+          expect_order
+        end
+      end
+    end
+
     private
+
+    def expect_order
+      expect(response.status).to eq 200
+      expect(json_response[:number]).to eq order.number
+    end
 
     def serialized_orders(orders)
       serialized_orders = ActiveModel::ArraySerializer.new(
@@ -179,9 +325,16 @@ module Api
     def order_attributes
       [
         :id, :number, :full_name, :email, :phone, :completed_at, :display_total,
-        :show_path, :edit_path, :state, :payment_state, :shipment_state,
-        :payments_path, :shipments_path, :ship_path, :ready_to_ship, :created_at,
-        :distributor_name, :special_instructions, :payment_capture_path
+        :edit_path, :state, :payment_state, :shipment_state,
+        :payments_path, :ready_to_ship, :ready_to_capture, :created_at,
+        :distributor_name, :special_instructions
+      ]
+    end
+
+    def order_detailed_attributes
+      [
+        :number, :item_total, :total, :state, :adjustment_total, :payment_total,
+        :completed_at, :shipment_state, :payment_state, :email, :special_instructions
       ]
     end
   end

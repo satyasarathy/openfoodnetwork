@@ -1,3 +1,7 @@
+# frozen_string_literal: true
+
+require "open_food_network/i18n_inflections"
+
 module OpenFoodNetwork
   class OptionValueNamer
     def initialize(variant = nil)
@@ -11,12 +15,12 @@ module OpenFoodNetwork
 
       name_fields = []
       name_fields << "#{value}#{separator}#{unit}" if value.present? && unit.present?
-      name_fields << @variant.unit_description   if @variant.unit_description.present?
+      name_fields << @variant.unit_description if @variant.unit_description.present?
       name_fields.join ' '
     end
 
     def value
-      value, _ = option_value_value_unit
+      value, = option_value_value_unit
       value
     end
 
@@ -24,7 +28,6 @@ module OpenFoodNetwork
       _, unit = option_value_value_unit
       unit
     end
-
 
     private
 
@@ -39,8 +42,7 @@ module OpenFoodNetwork
 
         else
           value = @variant.unit_value
-          unit_name = @variant.product.variant_unit_name
-          unit_name = unit_name.pluralize if value > 1
+          unit_name = pluralize(@variant.product.variant_unit_name, value)
         end
 
         value = value.to_i if value == value.to_i
@@ -61,17 +63,21 @@ module OpenFoodNetwork
     end
 
     def scale_for_unit_value
-      units = {'weight' => {1.0 => 'g', 1000.0 => 'kg', 1000000.0 => 'T'},
-               'volume' => {0.001 => 'mL', 1.0 => 'L',  1000.0 => 'kL'}}
+      units = { 'weight' => { 1.0 => 'g', 1000.0 => 'kg', 1_000_000.0 => 'T' },
+                'volume' => { 0.001 => 'mL', 1.0 => 'L',  1000.0 => 'kL' } }
 
       # Find the largest available unit where unit_value comes to >= 1 when expressed in it.
       # If there is none available where this is true, use the smallest available unit.
-      unit = units[@variant.product.variant_unit].select { |scale, unit_name|
+      unit = units[@variant.product.variant_unit].select { |scale, _unit_name|
         @variant.unit_value / scale >= 1
       }.to_a.last
       unit = units[@variant.product.variant_unit].first if unit.nil?
 
       unit
+    end
+
+    def pluralize(unit_name, count)
+      I18nInflections.pluralize(unit_name, count)
     end
   end
 end

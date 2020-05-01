@@ -3,6 +3,7 @@ require 'spec_helper'
 feature 'Shops', js: true do
   include AuthenticationWorkflow
   include UIComponentHelper
+  include WebHelper
 
   let!(:distributor) { create(:distributor_enterprise, with_payment_and_shipping: true) }
   let!(:invisible_distributor) { create(:distributor_enterprise, visible: false) }
@@ -13,6 +14,10 @@ feature 'Shops', js: true do
   let!(:producer) { create(:supplier_enterprise) }
   let!(:er) { create(:enterprise_relationship, parent: distributor, child: producer) }
 
+  before :each do
+    use_api_as_unauthenticated_user
+  end
+
   before do
     producer.set_producer_property 'Organic', 'NASAA 12345'
   end
@@ -21,7 +26,6 @@ feature 'Shops', js: true do
     visit shops_path(anchor: "/?query=xyzzy")
     expect(page).to have_content "Sorry, no results found for xyzzy"
   end
-
 
   describe "listing shops" do
     before do
@@ -55,21 +59,6 @@ feature 'Shops', js: true do
     it "links to the hub page" do
       follow_active_table_node distributor.name
       expect(page).to have_current_path enterprise_shop_path(distributor)
-    end
-
-    describe "showing profiles" do
-      before do
-        check "Show profiles"
-      end
-
-      it "still shows hubs" do
-        expect(page).to have_content distributor.name
-      end
-
-      # https://github.com/openfoodfoundation/openfoodnetwork/issues/1718
-      it "shows profiles" do
-        expect(page).to have_content profile.name
-      end
     end
   end
 
@@ -141,7 +130,7 @@ feature 'Shops', js: true do
     describe "closed shops" do
       it "shows taxons for any order cycle" do
         visit shops_path
-        click_link_and_ensure('Show closed shops', -> { page.has_selector? '.active_table_node'})
+        click_link_and_ensure('Show closed shops', -> { page.has_selector? '.active_table_node' })
         expand_active_table_node shop.name
         expect(page).to have_selector '.fat-taxons', text: 'Closed'
       end
@@ -187,6 +176,7 @@ feature 'Shops', js: true do
       within ".reveal-modal" do
         expect(page).to have_content 'Fruit'   # Taxon
         expect(page).to have_content 'Organic' # Producer property
+        expect(page).to have_content "Shop for #{producer.name} products at:".upcase
       end
     end
   end
@@ -202,7 +192,6 @@ feature 'Shops', js: true do
       expect(page).to have_selector 'hub.inactive', text: d2.name
     end
   end
-
 
   private
 

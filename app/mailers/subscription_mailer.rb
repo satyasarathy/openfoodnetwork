@@ -1,6 +1,7 @@
 class SubscriptionMailer < Spree::BaseMailer
   helper CheckoutHelper
   helper ShopMailHelper
+  helper OrderHelper
   include I18nHelper
 
   def confirmation_email(order)
@@ -48,7 +49,7 @@ class SubscriptionMailer < Spree::BaseMailer
 
   def send_mail(order)
     I18n.with_locale valid_locale(order.user) do
-      confirm_email_subject = t('order_mailer.confirm_email.subject')
+      confirm_email_subject = t('spree.order_mailer.confirm_email.subject')
       subject = "#{Spree::Config[:site_name]} #{confirm_email_subject} ##{order.number}"
       mail(to: order.email,
            from: from_address,

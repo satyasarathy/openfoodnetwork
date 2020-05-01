@@ -1,7 +1,8 @@
 - content_for(:title) do
   = t :orders_edit_title
 
-= inject_enterprise_and_relatives
+- content_for :injection_data do
+  = inject_enterprise_and_relatives
 
 .darkswarm
   - content_for :order_cycle_form do
@@ -15,17 +16,24 @@
         - else
           = @order.distributor.next_collection_at
 
-  = render partial: "shopping_shared/details"
+  - content_for :ordercycle_sidebar do
+    .show-for-large-up.large-4.columns
+      = render partial: "shopping_shared/order_cycles"
+
+  = render partial: "shopping_shared/header"
+
+  .sub-header.show-for-medium-down
+    = render partial: "shopping_shared/order_cycles"
 
   %fieldset.footer-pad
     - if @order.line_items.empty?
       %div.row{"data-hook" => "empty_cart"}
         %p= t(:your_cart_is_empty)
-        %p= link_to t(:continue_shopping), main_app.shop_path, :class => 'button continue'
+        %p= link_to t(:continue_shopping), current_shop_products_path, :class => 'button continue'
 
     - else
       %div{"data-hook" => "outside_cart_form"}
-        = form_for @order, :url => update_cart_path, :html => {:id => 'update-cart'} do |order_form|
+        = form_for @order, :url => main_app.update_cart_path, :html => {:id => 'update-cart'} do |order_form|
           %div{"data-hook" => "inside_cart_form"}
             %div{"data-hook" => "cart_items"}
               .row

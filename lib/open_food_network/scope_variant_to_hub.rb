@@ -20,43 +20,34 @@ module OpenFoodNetwork
         Spree::Price.new(amount: price, currency: currency)
       end
 
-      # Old Spree has the same logic as here and doesn't need this override.
-      # But we need this to use VariantOverrides with Spree 2.0.
-      def in_stock?
-        return true unless Spree::Config[:track_inventory_levels]
-
-        on_demand || (count_on_hand > 0)
-      end
-
-      def count_on_hand
-        @variant_override.andand.count_on_hand || super
-      end
-
-      def on_demand
-        if @variant_override.andand.on_demand.nil?
-          if @variant_override.andand.count_on_hand.present?
-            # If we're overriding the stock level of an on_demand variant, show it as not
-            # on_demand, so our stock control can take effect.
-            false
-          else
-            super
-          end
-        else
-          @variant_override.andand.on_demand
-        end
-      end
-
-      def decrement!(attribute, by = 1)
-        if attribute == :count_on_hand && @variant_override.andand.stock_overridden?
-          @variant_override.decrement_stock! by
+      # Uses variant_override.count_on_hand instead of Stock::Quantifier.stock_items.count_on_hand
+      def total_on_hand
+        if @variant_override.present? && @variant_override.stock_overridden?
+          @variant_override.count_on_hand
         else
           super
         end
       end
 
-      def increment!(attribute, by = 1)
-        if attribute == :count_on_hand && @variant_override.andand.stock_overridden?
-          @variant_override.increment_stock! by
+      def on_demand
+        if @variant_override.present? && !@variant_override.use_producer_stock_settings?
+          @variant_override.on_demand
+        else
+          super
+        end
+      end
+
+      # If it is an variant override with a count_on_hand value:
+      #   - updates variant_override.count_on_hand
+      #   - does not create stock_movement
+      #   - does not update stock_item.count_on_hand
+      # If it is a variant override with on_demand:
+      #   - don't change stock or call super (super would change the variant's stock)
+      def move(quantity, originator = nil)
+        return if @variant_override.andand.on_demand
+
+        if @variant_override.andand.stock_overridden?
+          @variant_override.move_stock! quantity
         else
           super
         end
